@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { db } from "./firebase";
-import { doc, getDoc, setDoc, collection, getDocs } from "firebase/firestore";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 const SURAHS = [
   "Al-Fatiha",
@@ -125,7 +125,7 @@ function StreakTracker({ userId }) {
   const [readToday, setReadToday] = useState(false);
   const [loading, setLoading] = useState(true);
   const [selectedSurah, setSelectedSurah] = useState("Al-Fatiha");
-  const [showSurahPicker, setShowSurahPicker] = useState(false);
+  //const [showSurahPicker, setShowSurahPicker] = useState(false);
 
   const getTodayString = () => new Date().toISOString().split("T")[0];
 

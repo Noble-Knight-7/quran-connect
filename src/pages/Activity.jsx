@@ -7,7 +7,7 @@ function Activity() {
   const { user } = useAuth();
   const [readDates, setReadDates] = useState(new Set());
   const [loading, setLoading] = useState(true);
-  const [tooltip, setTooltip] = useState(null); // { date, x, y }
+  //const [tooltip, setTooltip] = useState(null); // { date, x, y }
 
   // Load all reading history from Firebase
   useEffect(() => {
