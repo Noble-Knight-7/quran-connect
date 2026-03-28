@@ -156,7 +156,7 @@ function StreakTracker({ userId }) {
     setStreak(newStreak);
     setLastReadDate(today);
     setReadToday(true);
-    setShowSurahPicker(false);
+    // setShowSurahPicker(false);
 
     // Save streak
     const userDoc = doc(db, "users", userId);

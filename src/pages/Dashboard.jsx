@@ -126,7 +126,7 @@ function Dashboard() {
       surahData.sort((a, b) => b.count - a.count);
 
       // Load khatam count
-      const khatamDoc = doc(db, "users", user.uid);
+      // const khatamDoc = doc(db, "users", user.uid);
       const khatamData = userSnap.exists()
         ? userSnap.data().khatamCount || 0
         : 0;
