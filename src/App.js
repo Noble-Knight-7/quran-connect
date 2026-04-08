@@ -6,6 +6,8 @@ import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import Activity from "./pages/Activity";
 import Community from "./pages/Community";
+import Quran from "./pages/Quran";
+import SurahReader from "./pages/SurahReader";
 
 function App() {
   const { user } = useAuth();
@@ -26,6 +28,8 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/activity" element={<Activity />} />
           <Route path="/community" element={<Community />} />
+          <Route path="/quran" element={<Quran />} />
+          <Route path="/quran/:surahNumber" element={<SurahReader />} />
         </Routes>
       </div>
     </BrowserRouter>

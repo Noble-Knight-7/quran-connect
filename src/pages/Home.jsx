@@ -1,14 +1,26 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../AuthContext";
 import StreakTracker from "../StreakTracker";
+import { useNavigate } from "react-router-dom";
 
 function Home() {
   const { user } = useAuth();
   const [verse, setVerse] = useState(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
-    fetch("https://api.alquran.cloud/v1/ayah/1:1/editions/quran-simple,en.asad")
+    // Calculate which day of the year today is (1 to 365)
+    const start = new Date(new Date().getFullYear(), 0, 0);
+    const diff = new Date() - start;
+    const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+    // Use day of year as verse number — cycles through all 6236 verses
+    const verseNumber = (dayOfYear % 6236) + 1;
+
+    fetch(
+      `https://api.alquran.cloud/v1/ayah/${verseNumber}/editions/quran-simple,en.asad`,
+    )
       .then((res) => res.json())
       .then((data) => {
         setVerse(data.data);
@@ -46,6 +58,14 @@ function Home() {
               — Surah {verse[0].surah.englishName}, Verse{" "}
               {verse[0].numberInSurah}
             </p>
+            {!loading && verse && (
+              <button
+                onClick={() => navigate(`/quran/${verse[0].surah.number}`)}
+                className="mt-4 text-sm text-green-600 hover:text-green-800 font-medium transition-colors"
+              >
+                Read full Surah {verse[0].surah.englishName} →
+              </button>
+            )}
           </div>
         )}
       </div>

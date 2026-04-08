@@ -7,7 +7,8 @@ function Navbar() {
 
   // Helper — returns different classes depending on if the link is active
   const linkClass = (path) => {
-    const isActive = location.pathname === path;
+    const isActive =
+      location.pathname === path || location.pathname.startsWith(path + "/");
     return isActive
       ? "text-green-700 font-semibold border-b-2 border-green-600 pb-1"
       : "text-gray-400 hover:text-green-600 transition-colors pb-1";
@@ -34,6 +35,9 @@ function Navbar() {
           </Link>
           <Link to="/community" className={linkClass("/community")}>
             Community
+          </Link>
+          <Link to="/quran" className={linkClass("/quran")}>
+            Quran
           </Link>
         </div>
 
