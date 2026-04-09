@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../AuthContext";
@@ -90,6 +89,8 @@ function SurahReader() {
     setIsSidebarOpen(true);
     setSidebarLoading(true);
     setReflectionText("");
+    setTafsirData("");
+    setAiLesson("");
 
     // Construct the verse key format required by quran.com (e.g., "1:1")
     const verseKey = `${surah.number}:${verse.numberInSurah}`;
@@ -104,20 +105,23 @@ function SurahReader() {
       // Clean HTML tags from the Tafsir text
       const cleanTafsirText = tafsirData.tafsir.text.replace(/<[^>]*>?/gm, "");
       setTafsirData(cleanTafsirText);
+      const apiBaseUrl =
+        process.env.REACT_APP_API_BASE_URL || "http://localhost:5000";
 
-      // 2. Initialize Gemini directly in React
-      const genAI = new GoogleGenerativeAI(
-        process.env.REACT_APP_GEMINI_API_KEY,
-      );
-      const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
+      const lessonRes = await fetch(`${apiBaseUrl}/api/tafsir-lesson`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ verseKey }),
+      });
 
-      // 3. Prompt the AI
-      const prompt = `Explain the tafsir of the verse in simple sentences.\n\nTafsir context: ${cleanTafsirText}`;
+      if (!lessonRes.ok) {
+        throw new Error("Failed to generate AI lesson");
+      }
 
-      const result = await model.generateContent(prompt);
-      const lessonText = result.response.text();
-
-      setAiLesson(lessonText);
+      const lessonData = await lessonRes.json();
+      setAiLesson(lessonData.aiLesson);
     } catch (error) {
       console.error("Error fetching reflection data:", error);
       setTafsirData("Could not load Tafsir at this time. Please try again.");

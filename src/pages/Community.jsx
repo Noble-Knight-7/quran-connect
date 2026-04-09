@@ -5,7 +5,7 @@ import { collection, getDocs, doc, getDoc, setDoc } from "firebase/firestore";
 
 // Monthly challenge — change this each month
 const MONTHLY_CHALLENGE = {
-  month: "April 2025",
+  month: "April 2026",
   title: "Juz Amma Challenge",
   description:
     "Read all 37 surahs of Juz Amma (Surah An-Naba to An-Nas) this month.",

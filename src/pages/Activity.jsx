@@ -94,7 +94,10 @@ function Activity() {
         lastMonth = firstRealDay.month;
         labels.push({
           weekIndex,
-          name: new Date(2025, firstRealDay.month).toLocaleString("default", {
+          name: new Date(
+            new Date().getFullYear(),
+            firstRealDay.month,
+          ).toLocaleString("default", {
             month: "short",
           }),
         });

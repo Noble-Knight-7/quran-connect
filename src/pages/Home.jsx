@@ -10,22 +10,32 @@ function Home() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Calculate which day of the year today is (1 to 365)
-    const start = new Date(new Date().getFullYear(), 0, 0);
-    const diff = new Date() - start;
-    const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const loadVerse = async () => {
+      try {
+        const start = new Date(new Date().getFullYear(), 0, 0);
+        const diff = new Date() - start;
+        const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const verseNumber = (dayOfYear % 6236) + 1;
 
-    // Use day of year as verse number — cycles through all 6236 verses
-    const verseNumber = (dayOfYear % 6236) + 1;
+        const res = await fetch(
+          `https://api.alquran.cloud/v1/ayah/${verseNumber}/editions/quran-simple,en.asad`,
+        );
+        const data = await res.json();
 
-    fetch(
-      `https://api.alquran.cloud/v1/ayah/${verseNumber}/editions/quran-simple,en.asad`,
-    )
-      .then((res) => res.json())
-      .then((data) => {
+        if (!data?.data || data.data.length < 2) {
+          throw new Error("Verse data malformed");
+        }
+
         setVerse(data.data);
+      } catch (error) {
+        console.error("Failed to load verse of the day:", error);
+        setVerse(null);
+      } finally {
         setLoading(false);
-      });
+      }
+    };
+
+    loadVerse();
   }, []);
 
   return (
@@ -45,7 +55,7 @@ function Home() {
         </h2>
         {loading ? (
           <p className="text-gray-400 text-center">Loading verse...</p>
-        ) : (
+        ) : verse ? (
           <div>
             <p
               className="text-3xl text-right text-green-900 leading-loose mb-4"
@@ -58,15 +68,17 @@ function Home() {
               — Surah {verse[0].surah.englishName}, Verse{" "}
               {verse[0].numberInSurah}
             </p>
-            {!loading && verse && (
-              <button
-                onClick={() => navigate(`/quran/${verse[0].surah.number}`)}
-                className="mt-4 text-sm text-green-600 hover:text-green-800 font-medium transition-colors"
-              >
-                Read full Surah {verse[0].surah.englishName} →
-              </button>
-            )}
+            <button
+              onClick={() => navigate(`/quran/${verse[0].surah.number}`)}
+              className="mt-4 text-sm text-green-600 hover:text-green-800 font-medium transition-colors"
+            >
+              Read full Surah {verse[0].surah.englishName} →
+            </button>
           </div>
+        ) : (
+          <p className="text-gray-400 text-center">
+            Could not load the verse right now.
+          </p>
         )}
       </div>
     </div>
