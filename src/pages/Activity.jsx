@@ -1,243 +1,222 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "../AuthContext";
 import { db } from "../firebase";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 
 function Activity() {
   const { user } = useAuth();
-  const [readDates, setReadDates] = useState(new Set());
+  const [readData, setReadData] = useState({});
   const [loading, setLoading] = useState(true);
-  //const [tooltip, setTooltip] = useState(null); // { date, x, y }
+  const [stats, setStats] = useState({ streak: 0, thisMonth: 0 });
 
-  // Load all reading history from Firebase
   useEffect(() => {
     const loadHistory = async () => {
       const historyRef = collection(db, "users", user.uid, "history");
       const snapshot = await getDocs(historyRef);
+      const userDoc = await getDoc(doc(db, "users", user.uid));
 
-      // Put all dates into a Set for fast lookup
-      // A Set is like an array but checking "does this exist" is instant
-      const dates = new Set();
+      const dataMap = {};
+      let monthCount = 0;
+      const currentMonth = new Date().toISOString().split("-")[1];
+
       snapshot.forEach((doc) => {
-        dates.add(doc.id); // doc.id is the date string e.g. "2025-04-01"
+        const date = doc.id;
+        const count = doc.data().count || 1;
+        dataMap[date] = count;
+        if (date.split("-")[1] === currentMonth) monthCount += count;
       });
 
-      setReadDates(dates);
+      setReadData(dataMap);
+      setStats({
+        streak: userDoc.exists() ? userDoc.data().streak || 0 : 0,
+        thisMonth: monthCount,
+      });
       setLoading(false);
     };
-
     loadHistory();
   }, [user.uid]);
 
-  // Generate all 365 days going back from today
-  const generateDays = () => {
-    const days = [];
-    const today = new Date();
+  // Evolutionized Intensity Logic
+  const getIntensityColor = (dateString) => {
+    if (!dateString || !readData[dateString]) return "bg-gray-50 text-gray-300";
+    const count = readData[dateString];
+    if (count >= 5)
+      return "bg-green-700 text-white shadow-[0_0_10px_rgba(21,128,61,0.3)]";
+    if (count >= 3)
+      return "bg-green-500 text-white shadow-[0_0_8px_rgba(34,197,94,0.2)]";
+    return "bg-green-300 text-green-900";
+  };
 
-    for (let i = 364; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(today.getDate() - i);
-      const dateString = date.toISOString().split("T")[0];
-      days.push({
-        date: dateString,
-        dayOfWeek: date.getDay(), // 0=Sunday, 6=Saturday
-        month: date.getMonth(),
-        day: date.getDate(),
-      });
+  // Helper to generate a full month grid
+  const getMonthGrid = (monthOffset = 0) => {
+    const targetDate = new Date();
+    targetDate.setMonth(targetDate.getMonth() - monthOffset);
+
+    const year = targetDate.getFullYear();
+    const month = targetDate.getMonth();
+    const monthName = targetDate.toLocaleString("default", { month: "long" });
+
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const grid = [];
+    // Padding for start of month
+    for (let i = 0; i < firstDay; i++) grid.push(null);
+    // Real days
+    for (let i = 1; i <= daysInMonth; i++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(i).padStart(2, "0")}`;
+      grid.push({ dayNum: i, date: dateStr });
     }
-    return days;
+    return { name: monthName, year, grid };
   };
 
-  // Group days into columns of 7 (each column = one week)
-  const groupIntoWeeks = (days) => {
-    const weeks = [];
-    let currentWeek = [];
-
-    // Pad the first week so it starts on the right day
-    const firstDayOfWeek = days[0].dayOfWeek;
-    for (let i = 0; i < firstDayOfWeek; i++) {
-      currentWeek.push(null); // empty slots before first day
-    }
-
-    days.forEach((day) => {
-      currentWeek.push(day);
-      if (currentWeek.length === 7) {
-        weeks.push(currentWeek);
-        currentWeek = [];
-      }
-    });
-
-    // Push the last partial week
-    if (currentWeek.length > 0) {
-      while (currentWeek.length < 7) currentWeek.push(null);
-      weeks.push(currentWeek);
-    }
-
-    return weeks;
-  };
-
-  // Return a Tailwind color class based on whether the day was read
-  const getColor = (dateString) => {
-    if (!dateString) return "bg-transparent";
-    if (readDates.has(dateString)) return "bg-green-500";
-    return "bg-gray-100";
-  };
-
-  // Month labels — find the first week each month appears
-  const getMonthLabels = (weeks) => {
-    const labels = [];
-    let lastMonth = null;
-
-    weeks.forEach((week, weekIndex) => {
-      const firstRealDay = week.find((d) => d !== null);
-      if (firstRealDay && firstRealDay.month !== lastMonth) {
-        lastMonth = firstRealDay.month;
-        labels.push({
-          weekIndex,
-          name: new Date(
-            new Date().getFullYear(),
-            firstRealDay.month,
-          ).toLocaleString("default", {
-            month: "short",
-          }),
-        });
-      }
-    });
-    return labels;
-  };
-
-  const days = generateDays();
-  const weeks = groupIntoWeeks(days);
-  const monthLabels = getMonthLabels(weeks);
-  const totalDaysRead = readDates.size;
-  const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  if (loading)
+    return (
+      <div className="flex items-center justify-center h-screen text-gray-400 font-black animate-pulse uppercase tracking-widest">
+        Loading Activity...
+      </div>
+    );
 
   return (
-    <div className="flex flex-col items-center gap-8 py-10 px-4">
-      <div className="text-center">
-        <h1 className="text-3xl font-bold text-green-800">Activity</h1>
-        <p className="text-gray-400 text-sm mt-1">
-          Your reading journey over the past year
+    <div className="max-w-7xl mx-auto px-6 py-10 pb-32 md:pb-10">
+      {/* Header */}
+      <div className="mb-10">
+        <h1 className="text-3xl font-black text-green-900 tracking-tight">
+          Activity
+        </h1>
+        <p className="text-gray-500 font-medium text-sm">
+          Review your consistency and session depth.
         </p>
       </div>
 
-      {/* Summary stats */}
-      <div className="flex gap-6">
-        <div className="bg-white rounded-2xl px-8 py-5 shadow-md text-center">
-          <p className="text-4xl font-bold text-green-700">{totalDaysRead}</p>
-          <p className="text-gray-400 text-sm mt-1">days read</p>
-        </div>
-        <div className="bg-white rounded-2xl px-8 py-5 shadow-md text-center">
-          <p className="text-4xl font-bold text-green-700">
-            {Math.round((totalDaysRead / 365) * 100)}%
-          </p>
-          <p className="text-gray-400 text-sm mt-1">consistency</p>
-        </div>
-      </div>
-
-      {/* Heatmap */}
-      <div className="bg-white rounded-2xl p-6 shadow-md w-full max-w-4xl overflow-x-auto">
-        <h2 className="text-green-700 font-semibold mb-4">
-          {totalDaysRead} reading {totalDaysRead === 1 ? "day" : "days"} in the
-          past year
-        </h2>
-
-        {loading ? (
-          <p className="text-gray-400 text-center py-8">
-            Loading your activity...
-          </p>
-        ) : (
-          <div className="relative">
-            {/* Month labels row */}
-            <div className="flex mb-1 ml-8">
-              {weeks.map((_, weekIndex) => {
-                const label = monthLabels.find(
-                  (l) => l.weekIndex === weekIndex,
-                );
-                return (
-                  <div
-                    key={weekIndex}
-                    className="w-4 mr-1 text-xs text-gray-400"
-                    style={{ minWidth: "16px" }}
-                  >
-                    {label ? label.name : ""}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="flex gap-0">
-              {/* Day of week labels */}
-              <div className="flex flex-col mr-1 gap-1">
-                {dayLabels.map((label, i) => (
-                  <div
-                    key={i}
-                    className="h-4 text-xs text-gray-300 flex items-center"
-                    style={{ minHeight: "16px" }}
-                  >
-                    {i % 2 === 1 ? label : ""}
-                  </div>
-                ))}
-              </div>
-
-              {/* The grid */}
-              <div className="flex gap-1">
-                {weeks.map((week, weekIndex) => (
-                  <div key={weekIndex} className="flex flex-col gap-1">
-                    {week.map((day, dayIndex) => (
-                      <div
-                        key={dayIndex}
-                        className={`w-4 h-4 rounded-sm cursor-pointer transition-all hover:ring-2 hover:ring-green-400 hover:ring-offset-1 ${getColor(day?.date)}`}
-                        style={{ minWidth: "16px", minHeight: "16px" }}
-                        title={
-                          day
-                            ? `${day.date}${readDates.has(day.date) ? " ✓ Read" : ""}`
-                            : ""
-                        }
-                      />
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Legend */}
-            <div className="flex items-center gap-2 mt-4 justify-end">
-              <span className="text-xs text-gray-400">Less</span>
-              <div className="w-4 h-4 rounded-sm bg-gray-100" />
-              <div className="w-4 h-4 rounded-sm bg-green-200" />
-              <div className="w-4 h-4 rounded-sm bg-green-400" />
-              <div className="w-4 h-4 rounded-sm bg-green-600" />
-              <span className="text-xs text-gray-400">More</span>
-            </div>
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+        <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex items-center gap-5">
+          <div className="w-14 h-14 bg-green-50 rounded-2xl flex items-center justify-center text-3xl">
+            📖
           </div>
-        )}
+          <div>
+            <p className="text-3xl font-black text-gray-800">
+              {Object.keys(readData).length}
+            </p>
+            <p className="text-gray-400 text-[10px] uppercase font-bold tracking-widest">
+              Total Days
+            </p>
+          </div>
+        </div>
+        <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex items-center gap-5">
+          <div className="w-14 h-14 bg-orange-50 rounded-2xl flex items-center justify-center text-3xl">
+            🔥
+          </div>
+          <div>
+            <p className="text-3xl font-black text-gray-800">{stats.streak}</p>
+            <p className="text-gray-400 text-[10px] uppercase font-bold tracking-widest">
+              Current Streak
+            </p>
+          </div>
+        </div>
+        <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex items-center gap-5">
+          <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center text-3xl">
+            📅
+          </div>
+          <div>
+            <p className="text-3xl font-black text-gray-800">
+              {stats.thisMonth}
+            </p>
+            <p className="text-gray-400 text-[10px] uppercase font-bold tracking-widest">
+              This Month
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Reading log list */}
-      <div className="bg-white rounded-2xl p-6 shadow-md w-full max-w-4xl">
-        <h2 className="text-green-700 font-semibold mb-4">
-          Recent reading days
+      {/* Consistency Maps Section */}
+      <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 mb-10">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
+          <h2 className="text-xl font-black text-gray-800 tracking-tight">
+            Consistency Map
+          </h2>
+          <div className="flex items-center gap-3 text-[10px] font-bold text-gray-400 uppercase tracking-widest">
+            <span>Light</span>
+            <div className="flex gap-1.5">
+              <div className="w-4 h-4 rounded-md bg-gray-100" />
+              <div className="w-4 h-4 rounded-md bg-green-300" />
+              <div className="w-4 h-4 rounded-md bg-green-500" />
+              <div className="w-4 h-4 rounded-md bg-green-700" />
+            </div>
+            <span>Deep</span>
+          </div>
+        </div>
+
+        {/* Multi-Month Calendar Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
+          {[0, 1, 2].map((offset) => {
+            const { name, year, grid } = getMonthGrid(offset);
+            return (
+              <div key={offset} className="flex flex-col">
+                <p className="text-sm font-black text-green-800 mb-4 uppercase tracking-widest border-l-4 border-green-500 pl-3">
+                  {name} <span className="text-gray-300 ml-1">{year}</span>
+                </p>
+                <div className="grid grid-cols-7 gap-2">
+                  {["S", "M", "T", "W", "T", "F", "S"].map((d) => (
+                    <div
+                      key={d}
+                      className="text-center text-[10px] font-black text-gray-300 mb-2"
+                    >
+                      {d}
+                    </div>
+                  ))}
+                  {grid.map((day, i) => (
+                    <div
+                      key={i}
+                      className={`aspect-square rounded-xl flex items-center justify-center text-[11px] font-black transition-all duration-300 
+                        ${day ? getIntensityColor(day.date) : "bg-transparent"} 
+                        ${day ? "hover:scale-110 cursor-default" : ""}`}
+                      title={day?.date}
+                    >
+                      {day?.dayNum}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Activity List */}
+      <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100">
+        <h2 className="text-xl font-black text-gray-800 tracking-tight mb-6">
+          Activity Stream
         </h2>
-        {totalDaysRead === 0 ? (
-          <p className="text-gray-400 text-sm">
-            No reading logged yet. Go to Home and click "I read today" to start!
-          </p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {[...readDates]
-              .sort((a, b) => b.localeCompare(a)) // newest first
-              .slice(0, 20) // show last 20
-              .map((date) => (
-                <span
-                  key={date}
-                  className="bg-green-50 text-green-700 text-sm px-3 py-1 rounded-full border border-green-100"
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {Object.keys(readData)
+            .sort((a, b) => b.localeCompare(a))
+            .slice(0, 12)
+            .map((date) => (
+              <div
+                key={date}
+                className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 group hover:border-green-200 transition-all"
+              >
+                <div>
+                  <p className="text-sm font-black text-gray-800">
+                    {new Date(date).toLocaleDateString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </p>
+                  <p className="text-[10px] font-bold text-green-600 uppercase tracking-widest">
+                    Completed
+                  </p>
+                </div>
+                <div
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black shadow-sm ${getIntensityColor(date)}`}
                 >
-                  {date}
-                </span>
-              ))}
-          </div>
-        )}
+                  {readData[date]}
+                </div>
+              </div>
+            ))}
+        </div>
       </div>
     </div>
   );

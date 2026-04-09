@@ -1,10 +1,10 @@
 const { getReconnectPlanForDate } = require("./reconnectPlan");
-
 const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const dotenv = require("dotenv");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { db } = require("./firebaseAdmin");
 
 dotenv.config();
 
@@ -86,7 +86,15 @@ if (process.env.NODE_ENV !== "production") {
 }
 app.get("/api/daily-reconnect", async (req, res) => {
   try {
-    const date = req.query.date;
+    const date = req.query.date || new Date().toISOString().slice(0, 10);
+
+    const cacheRef = db.collection("dailyReconnectCache").doc(date);
+    const cacheSnap = await cacheRef.get();
+
+    if (cacheSnap.exists) {
+      return res.json(cacheSnap.data());
+    }
+
     const { dayNumber, totalDays, item } = getReconnectPlanForDate(date);
 
     const verseResponse = await axios.get(
@@ -114,44 +122,48 @@ app.get("/api/daily-reconnect", async (req, res) => {
     let aiInsight =
       "Read this verse slowly, reflect on its meaning, and ask Allah to make the Quran a daily companion in your life.";
 
-    try {
-      const apiKey = process.env.GEMINI_API_KEY;
+    const disableAI = process.env.DISABLE_AI_RECONNECT === "true";
 
-      if (!apiKey) {
-        throw new Error("Missing GEMINI_API_KEY");
+    if (!disableAI) {
+      try {
+        const apiKey = process.env.GEMINI_API_KEY;
+
+        if (!apiKey) {
+          throw new Error("Missing GEMINI_API_KEY");
+        }
+
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({
+          model: "gemini-flash-latest",
+        });
+
+        const prompt = `
+                    You are helping a Muslim reconnect with the Quran after Ramadan.
+
+                    Given this verse, tafsir, and reflection prompt, generate:
+                    1. A short heart-softening explanation in 2-4 sentences.
+                    2. A practical action reminder in 1 sentence.
+
+                    Keep it spiritually warm, concise, and easy to understand.
+                    Do not invent anything beyond the verse and tafsir.
+
+                    Verse Key: ${item.verseKey}
+                    Verse Translation: ${translationText}
+                    Tafsir: ${tafsirText}
+                    Reflection Prompt: ${item.reflectionPrompt}
+                    `;
+
+        const result = await model.generateContent(prompt);
+        aiInsight = result.response.text();
+      } catch (aiError) {
+        console.error("daily-reconnect ai error:", aiError.message);
       }
-
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({
-        model: "gemini-flash-latest",
-      });
-
-      const prompt = `
-You are helping a Muslim reconnect with the Quran after Ramadan.
-
-Given this verse, tafsir, and reflection prompt, generate:
-1. A short heart-softening explanation in 2-4 sentences.
-2. A practical action reminder in 1 sentence.
-
-Keep it spiritually warm, concise, and easy to understand.
-Do not invent anything beyond the verse and tafsir.
-
-Verse Key: ${item.verseKey}
-Verse Translation: ${translationText}
-Tafsir: ${tafsirText}
-Reflection Prompt: ${item.reflectionPrompt}
-      `;
-
-      const result = await model.generateContent(prompt);
-      aiInsight = result.response.text();
-    } catch (aiError) {
-      console.error("daily-reconnect ai error:", aiError.message);
     }
 
     const [surahNumber, verseNumber] = item.verseKey.split(":").map(Number);
 
-    return res.json({
-      date: date || new Date().toISOString().slice(0, 10),
+    const payload = {
+      date,
       dayNumber,
       totalDays,
       verseKey: item.verseKey,
@@ -164,7 +176,12 @@ Reflection Prompt: ${item.reflectionPrompt}
       translationText,
       tafsirText,
       aiInsight,
-    });
+      cachedAt: new Date().toISOString(),
+    };
+
+    await cacheRef.set(payload);
+
+    return res.json(payload);
   } catch (error) {
     console.error(
       "daily-reconnect error:",

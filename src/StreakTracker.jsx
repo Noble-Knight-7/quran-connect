@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { db } from "./firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 
@@ -119,7 +119,6 @@ const SURAHS = [
   "An-Nas",
 ];
 
-// Helper to calculate exact days between two "YYYY-MM-DD" strings safely
 const getDaysDiff = (dateStr1, dateStr2) => {
   if (!dateStr1 || !dateStr2) return null;
   const [y1, m1, d1] = dateStr1.split("-");
@@ -134,11 +133,14 @@ function StreakTracker({ userId }) {
   const [lastReadDate, setLastReadDate] = useState(null);
   const [readToday, setReadToday] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [selectedSurah, setSelectedSurah] = useState("Al-Fatiha");
+  const [saving, setSaving] = useState(false);
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedSurahs, setSelectedSurahs] = useState([]);
+  const [todaySurahs, setTodaySurahs] = useState([]);
 
   const getTodayString = () => {
     const today = new Date();
-    // Adjusting to local timezone string "YYYY-MM-DD"
     return new Date(today.getTime() - today.getTimezoneOffset() * 60000)
       .toISOString()
       .split("T")[0];
@@ -146,62 +148,135 @@ function StreakTracker({ userId }) {
 
   useEffect(() => {
     const loadStreak = async () => {
+      const today = getTodayString();
       const userDoc = doc(db, "users", userId);
-      const snapshot = await getDoc(userDoc);
-      if (snapshot.exists()) {
-        const data = snapshot.data();
+      const historyDoc = doc(db, "users", userId, "history", today);
+
+      const [userSnap, historySnap] = await Promise.all([
+        getDoc(userDoc),
+        getDoc(historyDoc),
+      ]);
+
+      if (userSnap.exists()) {
+        const data = userSnap.data();
         setStreak(data.streak || 0);
         setLastReadDate(data.lastReadDate || null);
-        if (data.lastReadDate === getTodayString()) setReadToday(true);
+        if (data.lastReadDate === today) setReadToday(true);
       }
+
+      if (historySnap.exists()) {
+        const historyData = historySnap.data();
+        const existingSurahs = Array.isArray(historyData.surahsCompleted)
+          ? historyData.surahsCompleted
+          : historyData.surah
+            ? [historyData.surah]
+            : [];
+        setTodaySurahs(existingSurahs);
+      }
+
       setLoading(false);
     };
+
     loadStreak();
   }, [userId]);
 
+  const filteredSurahs = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    const pool = SURAHS.filter((surah) => !selectedSurahs.includes(surah));
+
+    if (!term) return pool.slice(0, 12);
+
+    return pool
+      .filter((surah) => surah.toLowerCase().includes(term))
+      .slice(0, 12);
+  }, [searchTerm, selectedSurahs]);
+
+  const addSurah = (surah) => {
+    if (selectedSurahs.includes(surah)) return;
+    setSelectedSurahs((prev) => [...prev, surah]);
+    setSearchTerm("");
+  };
+
+  const removeSelectedSurah = (surah) => {
+    setSelectedSurahs((prev) => prev.filter((item) => item !== surah));
+  };
+
   const handleReadToday = async () => {
     const today = getTodayString();
-    if (lastReadDate === today) return;
+    if (!selectedSurahs.length || saving) return;
 
-    const diff = getDaysDiff(today, lastReadDate);
+    setSaving(true);
 
-    let newStreak;
-    if (diff === 1) {
-      // Normal consecutive reading
-      newStreak = streak + 1;
-    } else if (diff === 2 && streak > 0) {
-      // THE RECOVERY FEATURE: They missed yesterday, but we save their streak!
-      newStreak = streak + 1;
-    } else {
-      // Streak lost (missed 2+ days)
-      newStreak = 1;
+    try {
+      const diff = getDaysDiff(today, lastReadDate);
+
+      let newStreak = streak;
+      if (!readToday) {
+        if (diff === 1) {
+          newStreak = streak + 1;
+        } else if (diff === 2 && streak > 0) {
+          newStreak = streak + 1;
+        } else {
+          newStreak = 1;
+        }
+
+        setStreak(newStreak);
+        setLastReadDate(today);
+        setReadToday(true);
+
+        const userDoc = doc(db, "users", userId);
+        await setDoc(
+          userDoc,
+          { streak: newStreak, lastReadDate: today },
+          { merge: true },
+        );
+      }
+
+      const historyDoc = doc(db, "users", userId, "history", today);
+      const historySnap = await getDoc(historyDoc);
+
+      const existingHistory = historySnap.exists() ? historySnap.data() : {};
+      const existingSurahs = Array.isArray(existingHistory.surahsCompleted)
+        ? existingHistory.surahsCompleted
+        : existingHistory.surah
+          ? [existingHistory.surah]
+          : [];
+
+      const mergedSurahs = [...new Set([...existingSurahs, ...selectedSurahs])];
+      const previousCount = Number(existingHistory.count || 0);
+      const addedCount = selectedSurahs.length;
+
+      await setDoc(
+        historyDoc,
+        {
+          date: today,
+          read: true,
+          count: previousCount + addedCount,
+          surahsCompleted: mergedSurahs,
+          lastUpdatedAt: new Date().toISOString(),
+        },
+        { merge: true },
+      );
+
+      for (const surah of selectedSurahs) {
+        const surahDoc = doc(db, "users", userId, "surahs", surah);
+        const surahSnap = await getDoc(surahDoc);
+        const currentCount = surahSnap.exists()
+          ? surahSnap.data().count || 0
+          : 0;
+
+        await setDoc(
+          surahDoc,
+          { count: currentCount + 1, name: surah },
+          { merge: true },
+        );
+      }
+
+      setTodaySurahs(mergedSurahs);
+      setSelectedSurahs([]);
+    } finally {
+      setSaving(false);
     }
-
-    setStreak(newStreak);
-    setLastReadDate(today);
-    setReadToday(true);
-
-    // Save streak
-    const userDoc = doc(db, "users", userId);
-    await setDoc(
-      userDoc,
-      { streak: newStreak, lastReadDate: today },
-      { merge: true },
-    );
-
-    // Save to history with surah info
-    const historyDoc = doc(db, "users", userId, "history", today);
-    await setDoc(historyDoc, {
-      date: today,
-      read: true,
-      surah: selectedSurah,
-    });
-
-    // Update surah count
-    const surahDoc = doc(db, "users", userId, "surahs", selectedSurah);
-    const surahSnap = await getDoc(surahDoc);
-    const currentCount = surahSnap.exists() ? surahSnap.data().count : 0;
-    await setDoc(surahDoc, { count: currentCount + 1, name: selectedSurah });
   };
 
   const todayStr = getTodayString();
@@ -209,36 +284,41 @@ function StreakTracker({ userId }) {
   const isAtRisk = diff === 2 && streak > 0 && !readToday;
 
   const getMotivation = () => {
-    if (isAtRisk)
+    if (isAtRisk) {
       return {
         emoji: "⚠️",
         message: "Streak at risk! Read today to recover it.",
         color: "text-orange-600",
       };
-    if (streak === 0)
+    }
+    if (streak === 0) {
       return {
         emoji: "📖",
         message: "Start your journey today",
         color: "text-green-600",
       };
-    if (streak < 3)
+    }
+    if (streak < 3) {
       return {
         emoji: "🌱",
         message: "Great start! Keep going",
         color: "text-green-600",
       };
-    if (streak < 7)
+    }
+    if (streak < 7) {
       return {
         emoji: "🔥",
         message: "You're building a habit!",
         color: "text-green-600",
       };
-    if (streak < 30)
+    }
+    if (streak < 30) {
       return {
         emoji: "⚡",
         message: "MashaAllah! Stay consistent",
         color: "text-green-600",
       };
+    }
     return {
       emoji: "👑",
       message: "SubhanAllah! You're unstoppable",
@@ -250,57 +330,133 @@ function StreakTracker({ userId }) {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl p-8 shadow-md w-full max-w-sm text-center">
-        <p className="text-gray-400">Loading your streak...</p>
+      <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-gray-100 w-full">
+        <p className="text-gray-400 text-center">Loading your streak...</p>
       </div>
     );
   }
 
   return (
     <div
-      className={`rounded-2xl p-8 shadow-md w-full max-w-sm text-center transition-all border-2 ${isAtRisk ? "bg-orange-50 border-orange-200" : "bg-white border-transparent"}`}
+      className={`rounded-3xl p-6 md:p-8 shadow-sm w-full border transition-all flex flex-col min-h-[720px] xl:h-[740px] ${
+        isAtRisk ? "bg-orange-50 border-orange-200" : "bg-white border-gray-100"
+      }`}
     >
-      <p className="text-6xl mb-3 animate-bounce">{emoji}</p>
-      <p
-        className={`text-5xl font-bold mb-1 ${isAtRisk ? "text-orange-600" : "text-green-800"}`}
-      >
-        {streak}
-      </p>
-      <p className="text-gray-400 text-sm mb-1">
-        {streak === 1 ? "day streak" : "days streak"}
-      </p>
-      <p className={`text-sm font-medium mb-6 ${color}`}>{message}</p>
+      <div className="text-center shrink-0">
+        <p className="text-6xl mb-3">{emoji}</p>
+        <p
+          className={`text-5xl font-black mb-1 ${
+            isAtRisk ? "text-orange-600" : "text-green-800"
+          }`}
+        >
+          {streak}
+        </p>
+        <p className="text-gray-400 text-sm mb-1">
+          {streak === 1 ? "day streak" : "days streak"}
+        </p>
+        <p className={`text-sm font-semibold mb-6 ${color}`}>{message}</p>
+      </div>
 
-      {readToday ? (
-        <div className="bg-green-100 text-green-700 rounded-xl py-3 px-6 font-medium shadow-inner">
-          Logged for today ✓
+      <div className="rounded-2xl bg-green-50/70 border border-green-100 p-4 mb-4 shrink-0">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <p className="text-[11px] font-black uppercase tracking-widest text-green-700">
+            Today’s surahs
+          </p>
+          <span className="text-[10px] font-bold text-green-700 bg-white px-2.5 py-1 rounded-full border border-green-100">
+            {todaySurahs.length} logged
+          </span>
         </div>
-      ) : (
-        <div className="flex flex-col gap-3">
-          <select
-            value={selectedSurah}
-            onChange={(e) => setSelectedSurah(e.target.value)}
-            className="w-full border border-gray-200 rounded-xl py-2 px-3 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-300"
-          >
-            {SURAHS.map((surah) => (
-              <option key={surah} value={surah}>
-                {surah}
-              </option>
-            ))}
-          </select>
 
-          <button
-            onClick={handleReadToday}
-            className={`text-white rounded-xl py-3 px-6 font-medium w-full transition-colors shadow-md ${isAtRisk ? "bg-orange-500 hover:bg-orange-600" : "bg-green-700 hover:bg-green-800"}`}
-          >
-            {isAtRisk ? "Use Streak Recovery" : "I read today"}
-          </button>
+        {todaySurahs.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {todaySurahs.map((surah) => (
+              <span
+                key={surah}
+                className="px-3 py-1.5 rounded-full bg-white border border-green-100 text-xs font-semibold text-green-800"
+              >
+                {surah}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500">Nothing logged yet for today.</p>
+        )}
+      </div>
+
+      <div className="mb-4 shrink-0">
+        <label className="block text-[11px] font-black uppercase tracking-widest text-gray-500 mb-2">
+          Search and add surahs
+        </label>
+        <input
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Search surah name..."
+          className="w-full border border-gray-200 rounded-2xl py-3 px-4 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-300 bg-white"
+        />
+      </div>
+
+      {selectedSurahs.length > 0 && (
+        <div className="mb-4 strink-0">
+          <p className="text-[11px] font-black uppercase tracking-widest text-gray-500 mb-2">
+            Ready to log
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {selectedSurahs.map((surah) => (
+              <button
+                key={surah}
+                type="button"
+                onClick={() => removeSelectedSurah(surah)}
+                className="px-3 py-1.5 rounded-full bg-green-100 text-green-800 text-xs font-semibold hover:bg-green-200 transition-all"
+              >
+                {surah} ×
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
+      <div className="flex-1 min-h-0 overflow-y-auto rounded-2xl border border-gray-100 bg-gray-50/70 p-2 mb-4">
+        {filteredSurahs.length > 0 ? (
+          <div className="space-y-1">
+            {filteredSurahs.map((surah) => (
+              <button
+                key={surah}
+                type="button"
+                onClick={() => addSurah(surah)}
+                className="w-full text-left px-3 py-2.5 rounded-xl text-sm font-medium text-gray-700 hover:bg-white hover:text-green-800 transition-all"
+              >
+                {surah}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-400 px-3 py-4">No surahs found.</p>
+        )}
+      </div>
+
+      <button
+        onClick={handleReadToday}
+        disabled={!selectedSurahs.length || saving}
+        className={`w-full rounded-2xl py-3.5 px-6 font-bold text-sm transition-all shadow-sm shrink-0 ${
+          isAtRisk
+            ? "bg-orange-500 hover:bg-orange-600 text-white"
+            : "bg-green-700 hover:bg-green-800 text-white"
+        } disabled:opacity-50 disabled:cursor-not-allowed`}
+      >
+        {saving
+          ? "Saving..."
+          : readToday
+            ? `Add ${selectedSurahs.length || ""} more surah${selectedSurahs.length === 1 ? "" : "s"}`
+            : isAtRisk
+              ? "Use Streak Recovery"
+              : "Log today’s reading"}
+      </button>
+
       {lastReadDate && (
         <p
-          className={`text-xs mt-4 ${isAtRisk ? "text-orange-400" : "text-gray-300"}`}
+          className={`text-xs mt-4 text-center shrink-0 ${
+            isAtRisk ? "text-orange-400" : "text-gray-300"
+          }`}
         >
           Last read: {lastReadDate}
         </p>

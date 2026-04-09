@@ -23,75 +23,130 @@ function Quran() {
       String(s.number).includes(search),
   );
 
-  const revelationColor = (type) =>
-    type === "Meccan"
-      ? "bg-purple-50 text-purple-700"
-      : "bg-amber-50 text-amber-700";
+  const QUICK_LINKS = [
+    { name: "Al-Kahf", num: 18 },
+    { name: "Yaseen", num: 36 },
+    { name: "Ar-Rahman", num: 55 },
+    { name: "Al-Mulk", num: 67 },
+  ];
+
+  if (loading)
+    return (
+      <div className="flex items-center justify-center h-screen text-gray-400 font-black animate-pulse uppercase tracking-widest">
+        Opening the Book...
+      </div>
+    );
 
   return (
-    <div className="flex flex-col items-center gap-6 py-10 px-4 max-w-4xl mx-auto">
-      <div className="text-center">
-        <h1 className="text-3xl font-bold text-green-800">The Quran</h1>
-        <p className="text-gray-400 text-sm mt-1">
-          114 surahs — click any to read
-        </p>
+    <div className="max-w-7xl mx-auto px-6 py-10 pb-32 md:pb-10">
+      {/* Header Section */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
+        <div>
+          <h1 className="text-3xl font-black text-green-900 tracking-tight">
+            The Holy Quran
+          </h1>
+          <p className="text-gray-500 font-medium text-sm italic">
+            "A guidance for those conscious of Allah."
+          </p>
+        </div>
+        <div className="bg-green-50 px-4 py-2 rounded-2xl border border-green-100">
+          <span className="text-green-800 font-black text-xl">114</span>
+          <span className="text-green-600 text-[10px] font-bold uppercase tracking-widest ml-2">
+            Total Surahs
+          </span>
+        </div>
       </div>
 
-      {/* Search bar */}
-      <input
-        type="text"
-        placeholder="Search by name or number..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full max-w-lg border border-gray-200 rounded-2xl py-3 px-5 text-sm focus:outline-none focus:ring-2 focus:ring-green-300"
-      />
+      {/* Search & Quick Navigation */}
+      <div className="flex flex-col lg:flex-row gap-4 mb-10 items-center">
+        <div className="relative w-full lg:flex-1">
+          <span className="absolute left-5 top-1/2 -translate-y-1/2 text-lg">
+            🔍
+          </span>
+          <input
+            type="text"
+            placeholder="Search by name, number, or meaning..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-white border-none shadow-sm rounded-2xl py-4 pl-14 pr-6 text-sm font-medium focus:ring-2 focus:ring-green-500 transition-all outline-none"
+          />
+        </div>
 
-      {loading ? (
-        <p className="text-gray-400">Loading surahs...</p>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
-          {filtered.map((surah) => (
-            <div
-              key={surah.number}
-              onClick={() => navigate(`/quran/${surah.number}`)}
-              className="bg-white rounded-2xl p-4 shadow-sm border border-gray-50 hover:border-green-200 hover:shadow-md transition-all cursor-pointer flex items-center gap-4"
+        <div className="flex gap-2 w-full lg:w-auto overflow-x-auto no-scrollbar pb-2 lg:pb-0">
+          {QUICK_LINKS.map((link) => (
+            <button
+              key={link.num}
+              onClick={() => navigate(`/quran/${link.num}`)}
+              className="whitespace-nowrap bg-white border border-gray-100 px-4 py-2.5 rounded-xl text-[11px] font-black text-gray-500 uppercase tracking-wider hover:border-green-300 hover:text-green-600 transition-all shadow-sm"
             >
-              {/* Surah number badge */}
-              <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center text-green-700 font-bold text-sm flex-shrink-0">
-                {surah.number}
+              {link.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Surah Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filtered.map((surah) => (
+          <div
+            key={surah.number}
+            onClick={() => navigate(`/quran/${surah.number}`)}
+            className="group bg-white rounded-3xl p-6 shadow-sm border border-gray-50 hover:border-green-200 hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer flex items-center justify-between"
+          >
+            <div className="flex items-center gap-5">
+              {/* Number Badge with fancy styling */}
+              <div className="relative w-12 h-12 flex-shrink-0">
+                <div className="absolute inset-0 bg-green-100 rounded-2xl rotate-12 group-hover:rotate-45 transition-transform duration-500"></div>
+                <div className="absolute inset-0 bg-white border-2 border-green-500 rounded-2xl flex items-center justify-center">
+                  <span className="text-green-800 font-black text-sm">
+                    {surah.number}
+                  </span>
+                </div>
               </div>
 
-              {/* Surah info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <p className="font-semibold text-green-800">
-                    {surah.englishName}
-                  </p>
+              {/* Info */}
+              <div className="min-w-0">
+                <h3 className="font-black text-gray-800 text-lg leading-tight group-hover:text-green-700 transition-colors">
+                  {surah.englishName}
+                </h3>
+                <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mt-1">
+                  {surah.englishNameTranslation}
+                </p>
+                <div className="flex items-center gap-2 mt-2">
                   <span
-                    className={`text-xs px-2 py-0.5 rounded-full ${revelationColor(surah.revelationType)}`}
+                    className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${
+                      surah.revelationType === "Meccan"
+                        ? "bg-purple-50 text-purple-600"
+                        : "bg-amber-50 text-amber-600"
+                    }`}
                   >
                     {surah.revelationType}
                   </span>
+                  <span className="text-[9px] font-black text-gray-300 uppercase">
+                    {surah.numberOfAyahs} Verses
+                  </span>
                 </div>
-                <p className="text-gray-400 text-xs mt-0.5">
-                  {surah.englishNameTranslation}
-                </p>
-              </div>
-
-              {/* Arabic name + verse count */}
-              <div className="text-right flex-shrink-0">
-                <p
-                  className="text-green-700 font-medium text-lg"
-                  style={{ fontFamily: "serif" }}
-                >
-                  {surah.name}
-                </p>
-                <p className="text-gray-300 text-xs">
-                  {surah.numberOfAyahs} verses
-                </p>
               </div>
             </div>
-          ))}
+
+            {/* Arabic Title */}
+            <div className="text-right">
+              <p className="text-2xl font-black text-green-900 mb-1" dir="rtl">
+                {surah.name}
+              </p>
+              <div className="w-8 h-1 bg-green-100 rounded-full ml-auto group-hover:w-full transition-all duration-500"></div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* No results state */}
+      {filtered.length === 0 && (
+        <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
+          <p className="text-4xl mb-4">📖</p>
+          <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">
+            No Surah matches your search
+          </p>
         </div>
       )}
     </div>
