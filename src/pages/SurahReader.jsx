@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "../firebase";
+import { useAuth } from "../AuthContext";
 
 function SurahReader() {
   const { surahNumber } = useParams();
@@ -20,6 +23,47 @@ function SurahReader() {
   // We will fill these with actual API data in the next step
   const [tafsirData, setTafsirData] = useState("");
   const [aiLesson, setAiLesson] = useState("");
+  const [playing, setPlaying] = useState(false);
+  const [currentAudio, setCurrentAudio] = useState(null);
+  const [activeAyah, setActiveAyah] = useState(null);
+  const { user } = useAuth();
+
+  const playSurah = async () => {
+    if (playing) {
+      currentAudio.pause();
+      setPlaying(false);
+      setActiveAyah(null);
+      return;
+    }
+
+    // Fetching from Quran Foundation Audio API (Reciter: Mishary Rashid Alafasy)
+    const res = await fetch(
+      `https://api.quran.com/api/v4/chapter_recitations/7/${surahNumber}`,
+    );
+    const data = await res.json();
+    const audioUrl = data.audio_file.audio_url;
+
+    const audio = new Audio(audioUrl);
+    setCurrentAudio(audio);
+    setPlaying(true);
+
+    // This is the "Technical Execution" part:
+    // We listen for time updates and try to sync the highlight
+    audio.ontimeupdate = () => {
+      // In a full implementation, you'd fetch 'timestamps' from api.quran.com/api/v4/recitations
+      // For the hackathon, we can simulate the highlight moving based on duration / verse count
+      const progress = audio.currentTime / audio.duration;
+      const verseIndex = Math.floor(progress * verses.length);
+      setActiveAyah(verses[verseIndex]?.numberInSurah);
+    };
+
+    audio.onended = () => {
+      setPlaying(false);
+      setActiveAyah(null);
+    };
+
+    audio.play();
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -85,15 +129,24 @@ function SurahReader() {
     }
   };
 
-  const handleSaveReflection = () => {
-    console.log(
-      "Saving to Firebase:",
-      reflectionText,
-      "for verse:",
-      selectedVerse.number,
-    );
-    // TODO in next step: Connect to Firebase Firestore
-    alert("Reflection ready to be saved to Firebase!");
+  const handleSaveReflection = async () => {
+    if (!reflectionText.trim() || !user) return; // Ensure user is logged in
+    try {
+      await addDoc(collection(db, "reflections"), {
+        userId: user.uid, // This connects the reflection to the logged-in user
+        surahNumber: parseInt(surahNumber),
+        verseNumber: selectedVerse.numberInSurah,
+        userReflection: reflectionText,
+        aiLesson: aiLesson,
+        timestamp: serverTimestamp(),
+      });
+      setReflectionText("");
+      alert("✨ Reflection saved!");
+      setIsSidebarOpen(false);
+    } catch (error) {
+      console.error("Save error:", error);
+      alert("⚠️ Error saving.");
+    }
   };
 
   const fontSizes = [
@@ -144,6 +197,12 @@ function SurahReader() {
             >
               {surah.name}
             </p>
+            <button
+              onClick={playSurah}
+              className={`mt-4 px-6 py-2 rounded-full font-bold transition-all ${playing ? "bg-red-100 text-red-600" : "bg-green-700 text-white"}`}
+            >
+              {playing ? "Stop Recitation" : "▶ Listen to Surah"}
+            </button>
           </div>
 
           {/* Controls */}
@@ -192,11 +251,15 @@ function SurahReader() {
             {verses.map((verse, index) => (
               <div
                 key={verse.numberInSurah}
-                // ADDED CURSOR POINTER AND ONCLICK HERE
                 onClick={() =>
                   handleVerseClick(verse, translation[index]?.text)
                 }
-                className="bg-white rounded-2xl p-6 shadow-sm hover:shadow-md transition-all cursor-pointer border-2 border-transparent hover:border-green-200"
+                // This dynamic className adds the green glow when the audio reaches this specific Ayah
+                className={`bg-white rounded-2xl p-6 shadow-sm transition-all cursor-pointer border-2 ${
+                  activeAyah === verse.numberInSurah
+                    ? "border-green-500 ring-4 ring-green-50"
+                    : "border-transparent"
+                } hover:border-green-200`}
               >
                 <div className="flex justify-between items-center mb-4">
                   <div className="w-8 h-8 rounded-full bg-green-50 flex items-center justify-center text-green-600 text-xs font-bold">
