@@ -96,15 +96,6 @@ function SurahReader() {
     const verseKey = `${surah.number}:${verse.numberInSurah}`;
 
     try {
-      // 1. Fetch Tafsir directly from Quran.com
-      const tafsirRes = await fetch(
-        `https://api.quran.com/api/v4/tafsirs/169/by_ayah/${verseKey}`,
-      );
-      const tafsirData = await tafsirRes.json();
-
-      // Clean HTML tags from the Tafsir text
-      const cleanTafsirText = tafsirData.tafsir.text.replace(/<[^>]*>?/gm, "");
-      setTafsirData(cleanTafsirText);
       const apiBaseUrl =
         process.env.REACT_APP_API_BASE_URL || "http://localhost:5000";
 
@@ -121,6 +112,7 @@ function SurahReader() {
       }
 
       const lessonData = await lessonRes.json();
+      setTafsirData(lessonData.tafsir);
       setAiLesson(lessonData.aiLesson);
     } catch (error) {
       console.error("Error fetching reflection data:", error);
@@ -363,7 +355,7 @@ function SurahReader() {
                 {/* AI Lesson Card */}
                 <div className="bg-gradient-to-br from-green-50 to-emerald-100 p-4 rounded-xl border border-green-200">
                   <h3 className="text-xs font-bold text-green-800 uppercase tracking-wider mb-2 flex items-center gap-2">
-                    ✨ Ayaah Explanation
+                    ✨ AI Lesson
                   </h3>
                   <p className="text-sm text-green-900 font-medium leading-relaxed">
                     {aiLesson}
