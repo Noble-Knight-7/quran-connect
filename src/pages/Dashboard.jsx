@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "../AuthContext";
 import { db } from "../firebase";
 import { doc, getDoc, collection, getDocs, setDoc } from "firebase/firestore";
+import DailyReconnectCard from "../components/DailyReconnectCard";
 
 // Badge definitions — each badge has a condition to unlock it
 const BADGES = [
@@ -211,7 +212,7 @@ function Dashboard() {
           Your Quran journey at a glance
         </p>
       </div>
-
+      <DailyReconnectCard />
       {/* Stat cards */}
       <div className="flex flex-wrap gap-4 w-full justify-center">
         <StatCard value={stats.totalDays} label="total days read" emoji="📅" />
