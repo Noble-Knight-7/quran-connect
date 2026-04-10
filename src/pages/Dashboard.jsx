@@ -156,7 +156,10 @@ function Dashboard() {
       surahSnap.forEach((d) => surahData.push(d.data()));
       surahData.sort((a, b) => b.count - a.count);
 
-      const khatamData = userData.khatamCount || 0;
+      const completedSurahCount = Number(userData.completedSurahCount || 0);
+      const khatamData = Number(
+        userData.khatamCount ?? Math.floor(completedSurahCount / 114),
+      );
       const reflectionsRef = query(
         collection(db, "users", user.uid, "reflections"),
         orderBy("timestamp", "desc"),
@@ -219,13 +222,15 @@ function Dashboard() {
   const incrementKhatam = async () => {
     const userDoc = doc(db, "users", user.uid);
     const newCount = khatamCount + 1;
+
     setKhatamCount(newCount);
     setStats((prev) => ({ ...prev, khatamCount: newCount }));
-    const snap = await getDoc(userDoc);
-    const existing = snap.exists() ? snap.data() : {};
+
     await setDoc(
       userDoc,
-      { ...existing, khatamCount: newCount },
+      {
+        khatamCount: newCount,
+      },
       { merge: true },
     );
   };

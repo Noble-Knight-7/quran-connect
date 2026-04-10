@@ -3,6 +3,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
 import { useAuth } from "../AuthContext";
+import { getDayDiff, getLocalDateKey } from "../utils/date";
 
 const getApiBaseUrl = () => {
   const envUrl = process.env.REACT_APP_API_BASE_URL?.trim();
@@ -39,24 +40,7 @@ function DailyReconnectCard() {
   const [loadError, setLoadError] = useState("");
   const [saveError, setSaveError] = useState("");
 
-  const dateKey = useMemo(() => {
-    const today = new Date();
-    return [
-      today.getFullYear(),
-      String(today.getMonth() + 1).padStart(2, "0"),
-      String(today.getDate()).padStart(2, "0"),
-    ].join("-");
-  }, []);
-
-  const getDayDiff = (previousDateKey, currentDateKey) => {
-    if (!previousDateKey || !currentDateKey) return null;
-
-    const previous = new Date(`${previousDateKey}T00:00:00`);
-    const current = new Date(`${currentDateKey}T00:00:00`);
-
-    const msPerDay = 1000 * 60 * 60 * 24;
-    return Math.floor((current - previous) / msPerDay);
-  };
+  const dateKey = useMemo(() => getLocalDateKey(), []);
 
   const loadPlan = useCallback(async () => {
     setLoading(true);

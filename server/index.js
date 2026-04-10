@@ -21,21 +21,33 @@ const allowedOrigins = [
   "https://quran-connect-one.vercel.app",
 ];
 
+const allowedOriginPatterns = [
+  /^https:\/\/quran-connect(?:-[a-zA-Z0-9-]+)?\.vercel\.app$/,
+];
+
+const envAllowedOrigins = String(process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  if (envAllowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  return allowedOriginPatterns.some((pattern) => pattern.test(origin));
+}
+
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      const vercelPreviewPattern =
-        /^https:\/\/quran-connect(?:-[a-zA-Z0-9-]+)?\.vercel\.app$/;
-
-      if (vercelPreviewPattern.test(origin)) {
+      if (isAllowedOrigin(origin)) {
         return callback(null, true);
       }
 

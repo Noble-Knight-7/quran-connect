@@ -335,13 +335,18 @@ function SurahReader() {
         ? previousHistoryCount
         : previousHistoryCount + 1;
 
-      const alreadyCompletedSurah = Array.isArray(userData.completedSurahs)
-        ? userData.completedSurahs.includes(Number(surahNumber))
-        : false;
+      const completedSurahs = Array.isArray(userData.completedSurahs)
+        ? userData.completedSurahs
+        : [];
+
+      const surahNumberValue = Number(surahNumber);
+      const alreadyCompletedSurah = completedSurahs.includes(surahNumberValue);
 
       const nextCompletedSurahCount = alreadyCompletedSurah
         ? currentCompletedSurahCount
         : currentCompletedSurahCount + 1;
+
+      const nextKhatamCount = Math.floor(nextCompletedSurahCount / 114);
 
       await setDoc(
         userRef,
@@ -351,8 +356,11 @@ function SurahReader() {
           lastReadDate: localDateKey,
           totalDays: nextTotalDays,
           completedSurahCount: nextCompletedSurahCount,
-          completedSurahs: arrayUnion(Number(surahNumber)),
-          lastFinishedSurah: Number(surahNumber),
+          completedSurahs: alreadyCompletedSurah
+            ? completedSurahs
+            : arrayUnion(surahNumberValue),
+          lastFinishedSurah: surahNumberValue,
+          khatamCount: nextKhatamCount,
           updatedAt: serverTimestamp(),
         },
         { merge: true },
@@ -365,7 +373,7 @@ function SurahReader() {
           read: true,
           count: nextHistoryCount,
           surahsCompleted: mergedHistorySurahs,
-          lastSurahFinished: Number(surahNumber),
+          lastSurahFinished: surahNumberValue,
           lastUpdatedAt: new Date().toISOString(),
           updatedAt: serverTimestamp(),
         },

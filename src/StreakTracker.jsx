@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { db } from "./firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
+import { getDayDiff, getLocalDateKey } from "./utils/date";
 
 const SURAHS = [
   "Al-Fatiha",
@@ -119,24 +120,6 @@ const SURAHS = [
   "An-Nas",
 ];
 
-const getDaysDiff = (dateStr1, dateStr2) => {
-  if (!dateStr1 || !dateStr2) return null;
-  const [y1, m1, d1] = dateStr1.split("-");
-  const [y2, m2, d2] = dateStr2.split("-");
-  const date1 = new Date(Number(y1), Number(m1) - 1, Number(d1));
-  const date2 = new Date(Number(y2), Number(m2) - 1, Number(d2));
-  return Math.round((date1 - date2) / (1000 * 60 * 60 * 24));
-};
-
-const getTodayString = () => {
-  const today = new Date();
-  return [
-    today.getFullYear(),
-    String(today.getMonth() + 1).padStart(2, "0"),
-    String(today.getDate()).padStart(2, "0"),
-  ].join("-");
-};
-
 function StreakTracker({ userId }) {
   const [streak, setStreak] = useState(0);
   const [lastReadDate, setLastReadDate] = useState(null);
@@ -150,7 +133,7 @@ function StreakTracker({ userId }) {
 
   useEffect(() => {
     const loadStreak = async () => {
-      const today = getTodayString();
+      const today = getLocalDateKey();
       const userDoc = doc(db, "users", userId);
       const historyDoc = doc(db, "users", userId, "history", today);
 
@@ -204,7 +187,7 @@ function StreakTracker({ userId }) {
   };
 
   const handleReadToday = async () => {
-    const today = getTodayString();
+    const today = getLocalDateKey();
     if (!selectedSurahs.length || saving) return;
 
     setSaving(true);
@@ -240,7 +223,7 @@ function StreakTracker({ userId }) {
         return;
       }
 
-      const diff = getDaysDiff(today, currentLastReadDate);
+      const diff = getDayDiff(currentLastReadDate, today);
 
       let newStreak = currentStreak;
 
@@ -309,8 +292,8 @@ function StreakTracker({ userId }) {
     }
   };
 
-  const todayStr = getTodayString();
-  const diff = getDaysDiff(todayStr, lastReadDate);
+  const todayStr = getLocalDateKey();
+  const diff = getDayDiff(lastReadDate, todayStr);
   const isAtRisk = diff === 1 && streak > 0 && !readToday;
 
   const getMotivation = () => {

@@ -9,6 +9,7 @@ import {
 import { db } from "../firebase";
 import { useAuth } from "../AuthContext";
 import { quizQuestions } from "../data/quizQuestions";
+import { getLocalDateKey } from "../utils/date";
 
 function getDayOfYear(date = new Date()) {
   const start = new Date(date.getFullYear(), 0, 0);
@@ -33,14 +34,6 @@ function getCategoryLabel(category) {
     default:
       return "Daily Challenge";
   }
-}
-
-function getLocalDateKey(date = new Date()) {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
 }
 
 function DailyQuizCard() {

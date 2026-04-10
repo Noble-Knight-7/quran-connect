@@ -37,10 +37,16 @@ function LeaderboardRow({
 
   return (
     <div
-      className={`flex items-center gap-4 p-4 rounded-2xl transition-all ${isCurrentUser ? "bg-green-50/50 border border-green-100" : "hover:bg-gray-50"}`}
+      className={`flex items-center gap-4 p-4 rounded-2xl transition-all ${
+        isCurrentUser
+          ? "bg-green-50/50 border border-green-100"
+          : "hover:bg-gray-50"
+      }`}
     >
       <div
-        className={`text-lg font-black w-8 text-center ${isTopThree ? rankColors[rank - 1] : "text-gray-300"}`}
+        className={`text-lg font-black w-8 text-center ${
+          isTopThree ? rankColors[rank - 1] : "text-gray-300"
+        }`}
       >
         {rank === 1 ? "👑" : rank}
       </div>
@@ -49,7 +55,7 @@ function LeaderboardRow({
         {photoURL ? (
           <img
             src={photoURL}
-            referrerPolicy="no-referrer" // THE FIX: Allows Google images to load
+            referrerPolicy="no-referrer"
             alt={name}
             className="w-10 h-10 rounded-xl object-cover border border-gray-100 shadow-sm"
           />
@@ -65,7 +71,9 @@ function LeaderboardRow({
 
       <div className="flex-1 min-w-0">
         <p
-          className={`font-bold truncate ${isCurrentUser ? "text-green-900" : "text-gray-800"}`}
+          className={`font-bold truncate ${
+            isCurrentUser ? "text-green-900" : "text-gray-800"
+          }`}
         >
           {name}{" "}
           {isCurrentUser && (
@@ -103,28 +111,65 @@ function Community() {
 
   useEffect(() => {
     const loadCommunity = async () => {
-      const usersRef = collection(db, "users");
-      const usersSnap = await getDocs(usersRef);
-      const users = usersSnap.docs.map((doc) => ({
-        uid: doc.id,
-        ...doc.data(),
-        displayName: doc.data().displayName || "Soul",
-        streak: doc.data().streak || 0,
-        totalDays: doc.data().totalDays || 0,
-      }));
+      try {
+        const usersRef = collection(db, "users");
+        const usersSnap = await getDocs(usersRef);
 
-      setLeaderboard(users);
+        const users = await Promise.all(
+          usersSnap.docs.map(async (userDocSnap) => {
+            const data = userDocSnap.data();
+            const uid = userDocSnap.id;
 
-      const myDoc = await getDoc(doc(db, "users", user.uid));
-      if (myDoc.exists()) {
-        setUserStats({
-          points: myDoc.data().points || 0,
-          challengeProgress: myDoc.data().challengeProgress || {},
-          challengeJoined: myDoc.data().challengeJoined || [],
-        });
+            let totalDays = Number(data.totalDays || 0);
+
+            try {
+              const historyRef = collection(db, "users", uid, "history");
+              const historySnap = await getDocs(historyRef);
+              const derivedTotalDays = historySnap.size;
+
+              totalDays = derivedTotalDays;
+
+              if (Number(data.totalDays || 0) !== derivedTotalDays) {
+                await setDoc(
+                  doc(db, "users", uid),
+                  { totalDays: derivedTotalDays },
+                  { merge: true },
+                );
+              }
+            } catch (historyError) {
+              console.error(
+                `Failed to derive totalDays for user ${uid}:`,
+                historyError,
+              );
+            }
+
+            return {
+              uid,
+              ...data,
+              displayName: data.displayName || "Soul",
+              streak: Number(data.streak || 0),
+              totalDays,
+            };
+          }),
+        );
+
+        setLeaderboard(users);
+
+        const myDoc = await getDoc(doc(db, "users", user.uid));
+        if (myDoc.exists()) {
+          setUserStats({
+            points: myDoc.data().points || 0,
+            challengeProgress: myDoc.data().challengeProgress || {},
+            challengeJoined: myDoc.data().challengeJoined || [],
+          });
+        }
+      } catch (error) {
+        console.error("Failed to load community data:", error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
+
     loadCommunity();
   }, [user.uid]);
 
@@ -137,6 +182,7 @@ function Community() {
   const updateChallenge = async (id, step) => {
     const current = userStats.challengeProgress[id] || 0;
     const challenge = CHALLENGES.find((c) => c.id === id);
+    if (!challenge) return;
     if (current + step > challenge.target || current + step < 0) return;
 
     const newProgress = current + step;
@@ -171,7 +217,6 @@ function Community() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10 pb-32 md:pb-10">
-      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
         <div>
           <h1 className="text-3xl font-black text-green-900 tracking-tight">
@@ -196,7 +241,6 @@ function Community() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Column: Challenges */}
         <div className="lg:col-span-7 space-y-6">
           <h2 className="text-xl font-black text-gray-800 tracking-tight mb-4 flex items-center gap-2">
             Active Challenges{" "}
@@ -295,7 +339,6 @@ function Community() {
           </div>
         </div>
 
-        {/* Right Column: Leaderboard */}
         <div className="lg:col-span-5">
           <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-gray-100">
             <div className="flex items-center justify-between mb-8">
