@@ -221,6 +221,7 @@ function StreakTracker({ userId }) {
       const userData = userSnap.exists() ? userSnap.data() : {};
       const currentStreak = Number(userData.streak || 0);
       const currentLastReadDate = userData.lastReadDate || null;
+      const currentTotalDays = Number(userData.totalDays || 0);
 
       const existingHistory = historySnap.exists() ? historySnap.data() : {};
       const existingSurahs = Array.isArray(existingHistory.surahsCompleted)
@@ -257,11 +258,17 @@ function StreakTracker({ userId }) {
       const previousCount = Number(existingHistory.count || 0);
       const addedCount = newUniqueSurahs.length;
 
+      const isFirstLogForThisDate = !historySnap.exists();
+      const nextTotalDays = isFirstLogForThisDate
+        ? currentTotalDays + 1
+        : currentTotalDays;
+
       await setDoc(
         userDoc,
         {
           streak: newStreak,
           lastReadDate: today,
+          totalDays: nextTotalDays,
         },
         { merge: true },
       );

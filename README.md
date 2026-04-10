@@ -1,70 +1,151 @@
-# Getting Started with Create React App
+# Quran Connect
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+**Retaining the Connection with the Quran After Ramadan**
 
-## Available Scripts
+Quran Connect is a web app built for the Quran Foundation hackathon to help Muslims maintain a living, daily relationship with the Quran after Ramadan. It combines Quran reading, daily reconnect prompts, AI reflection, streak tracking, journaling, and community motivation in one experience.
 
-In the project directory, you can run:
+## Why this exists
 
-### `npm start`
+Many people reconnect deeply with the Quran in Ramadan, then struggle to maintain that momentum afterwards. Quran Connect is designed to solve that drop-off by making Quran engagement:
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+- consistent
+- reflective
+- rewarding
+- community-supported
+- accessible across daily life
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Core features
 
-### `npm test`
+### Daily Quran habit system
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+- Daily streak tracker
+- Daily surah logging
+- Activity history
+- Total active days tracking
 
-### `npm run build`
+### Surah reading experience
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+- Read any surah
+- Arabic text display
+- Translation selector
+- Tafsir selector
+- Transliteration toggle
+- Word analysis toggle
+- Verse audio playback
+- Full surah recitation playback
+- Verse highlighting during playback
+- Juz / Hizb / Ruku / Manzil markers
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### Daily Reconnect
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+- A guided daily reconnect card
+- Selected verse of the day
+- Translation + tafsir insight
+- AI-generated reflection guide
+- Daily completion tracking
 
-### `npm run eject`
+### Reflection and journaling
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+- AI verse reflection in sidebar
+- Personal reflection journal per verse
+- Saved reflections to Firestore
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+### Community and motivation
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+- Leaderboard by streak
+- Leaderboard by total active days
+- Challenge cards
+- Reward points system
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+## Quran Foundation API usage
 
-## Learn More
+This project uses Quran Foundation APIs for Quran content and tafsir data.
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+### Content API usage
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+Used endpoints include:
 
-### Code Splitting
+- `chapters`
+- `verses/by_chapter`
+- `verses/by_key`
+- `quran/translations`
+- `resources/translations`
+- `resources/tafsirs`
+- `tafsirs/by_ayah`
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+These power:
 
-### Analyzing the Bundle Size
+- surah reading
+- verse display
+- translations
+- tafsir
+- word-level analysis
+- metadata chips
+- daily reconnect content
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+## Additional API usage
 
-### Making a Progressive Web App
+### Google Gemini API
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+Used for:
 
-### Advanced Configuration
+- daily reconnect AI reflection
+- verse reflection generation
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+### Firebase
+
+Used for:
+
+- authentication
+- Firestore user data
+- streak tracking
+- reading history
+- reflections
+- leaderboard data
+- challenge progress
+
+## Tech stack
+
+### Frontend
+
+- React
+- React Router
+- Firebase Web SDK
+- Tailwind-style utility classes
+
+### Backend
+
+- Node.js
+- Express
+- Firebase Admin SDK
+- Axios
+- CORS
+- dotenv
+
+### Database / auth
+
+- Firebase Firestore
+- Firebase Authentication
 
 ### Deployment
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+- Vercel
 
-### `npm run build` fails to minify
+## Project structure
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+```text
+quran-connect/
+├── src/
+│   ├── components/
+│   ├── pages/
+│   ├── firebase.js
+│   ├── AuthContext.js
+│   └── ...
+├── server/
+│   ├── index.js
+│   ├── firebaseAdmin.js
+│   ├── reconnectPlan.js
+│   └── package.json
+├── package.json
+└── README.md
+```

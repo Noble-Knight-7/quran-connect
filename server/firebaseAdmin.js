@@ -1,31 +1,32 @@
 const admin = require("firebase-admin");
-const path = require("path");
-const fs = require("fs");
 
-if (!admin.apps.length) {
-  let credential;
+let dbInstance = null;
 
-  if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-    const serviceAccount = JSON.parse(
-      process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
-    );
-    credential = admin.credential.cert(serviceAccount);
-  } else {
-    const localPath = path.join(__dirname, "serviceAccountKey.json");
+function getDb() {
+  if (dbInstance) return dbInstance;
 
-    if (!fs.existsSync(localPath)) {
-      throw new Error(
-        "Missing Firebase Admin credentials. Add FIREBASE_SERVICE_ACCOUNT_JSON or create server/serviceAccountKey.json",
-      );
+  if (!admin.apps.length) {
+    const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+
+    if (!raw) {
+      throw new Error("Missing FIREBASE_SERVICE_ACCOUNT_JSON");
     }
 
-    const serviceAccount = require(localPath);
-    credential = admin.credential.cert(serviceAccount);
+    let serviceAccount;
+
+    try {
+      serviceAccount = JSON.parse(raw);
+    } catch (error) {
+      throw new Error("FIREBASE_SERVICE_ACCOUNT_JSON is not valid JSON");
+    }
+
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+    });
   }
 
-  admin.initializeApp({ credential });
+  dbInstance = admin.firestore();
+  return dbInstance;
 }
 
-const db = admin.firestore();
-
-module.exports = { admin, db };
+module.exports = { admin, getDb };

@@ -4,6 +4,29 @@ import { useNavigate } from "react-router-dom";
 import { db } from "../firebase";
 import { useAuth } from "../AuthContext";
 
+const getApiBaseUrl = () => {
+  const envUrl = process.env.REACT_APP_API_BASE_URL?.trim();
+
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, "");
+  }
+
+  if (typeof window !== "undefined") {
+    const { hostname, origin } = window.location;
+
+    const isLocalHost =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1";
+
+    if (!isLocalHost) {
+      return origin.replace(/\/+$/, "");
+    }
+  }
+
+  return "http://localhost:5000";
+};
+
 function DailyReconnectCard() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -42,8 +65,7 @@ function DailyReconnectCard() {
     setMessage("");
 
     try {
-      const apiBaseUrl =
-        process.env.REACT_APP_API_BASE_URL || "http://localhost:5000";
+      const apiBaseUrl = getApiBaseUrl();
 
       const res = await fetch(
         `${apiBaseUrl}/api/daily-reconnect?date=${dateKey}`,

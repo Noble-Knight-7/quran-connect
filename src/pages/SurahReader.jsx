@@ -6,8 +6,6 @@ import {
   serverTimestamp,
   doc,
   setDoc,
-  updateDoc,
-  increment,
   arrayUnion,
   getDoc,
 } from "firebase/firestore";
@@ -18,8 +16,30 @@ const API_BASE = "https://api.quran.com/api/v4";
 const DEFAULT_RECITATION_ID = 7;
 const DEFAULT_TRANSLATION_ID = 20;
 const DEFAULT_TAFSIR_ID = 169;
-const API_BASE_URL =
-  process.env.REACT_APP_API_BASE_URL || "http://localhost:5000";
+const getApiBaseUrl = () => {
+  const envUrl = process.env.REACT_APP_API_BASE_URL?.trim();
+
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, "");
+  }
+
+  if (typeof window !== "undefined") {
+    const { hostname, origin } = window.location;
+
+    const isLocalHost =
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1";
+
+    if (!isLocalHost) {
+      return origin.replace(/\/+$/, "");
+    }
+  }
+
+  return "http://localhost:5000";
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 const FALLBACK_TRANSLATIONS = [
   { id: 20, name: "The Clear Quran", language_name: "English" },
@@ -225,6 +245,13 @@ function SurahReader() {
   const [reflectionSaved, setReflectionSaved] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [finishingSurah, setFinishingSurah] = useState(false);
+  const handleReadAgain = () => {
+    setIsFinished(false);
+    stopSurahPlayback();
+    stopVerseAudio();
+    setActiveAyah(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const handleFinishSurah = async () => {
     if (!user || !surah) return;
@@ -242,44 +269,121 @@ function SurahReader() {
 
       const userRef = doc(db, "users", user.uid);
       const historyRef = doc(db, "users", user.uid, "history", localDateKey);
+      const surahDocRef = doc(
+        db,
+        "users",
+        user.uid,
+        "surahs",
+        surah.englishName,
+      );
 
-      const userSnap = await getDoc(userRef);
+      const [userSnap, historySnap, surahSnap] = await Promise.all([
+        getDoc(userRef),
+        getDoc(historyRef),
+        getDoc(surahDocRef),
+      ]);
 
-      if (!userSnap.exists()) {
-        await setDoc(userRef, {
-          uid: user.uid,
-          completedSurahCount: 1,
-          completedSurahs: [Number(surahNumber)],
-          lastFinishedSurah: Number(surahNumber),
-          updatedAt: serverTimestamp(),
-        });
+      const userData = userSnap.exists() ? userSnap.data() : {};
+      const historyData = historySnap.exists() ? historySnap.data() : {};
+
+      const currentStreak = Number(userData.streak || 0);
+      const currentLastReadDate = userData.lastReadDate || null;
+      const currentTotalDays = Number(userData.totalDays || 0);
+      const currentCompletedSurahCount = Number(
+        userData.completedSurahCount || 0,
+      );
+
+      const existingHistorySurahs = Array.isArray(historyData.surahsCompleted)
+        ? historyData.surahsCompleted
+        : historyData.surah
+          ? [historyData.surah]
+          : [];
+
+      const alreadyLoggedToday = existingHistorySurahs.includes(
+        surah.englishName,
+      );
+
+      const getDaysDiff = (dateStr1, dateStr2) => {
+        if (!dateStr1 || !dateStr2) return null;
+        const [y1, m1, d1] = dateStr1.split("-");
+        const [y2, m2, d2] = dateStr2.split("-");
+        const date1 = new Date(Number(y1), Number(m1) - 1, Number(d1));
+        const date2 = new Date(Number(y2), Number(m2) - 1, Number(d2));
+        return Math.round((date1 - date2) / (1000 * 60 * 60 * 24));
+      };
+
+      let nextStreak = currentStreak;
+
+      if (currentLastReadDate === localDateKey) {
+        nextStreak = currentStreak || 1;
       } else {
-        await updateDoc(userRef, {
-          completedSurahCount: increment(1),
+        const diff = getDaysDiff(localDateKey, currentLastReadDate);
+        nextStreak = diff === 1 ? currentStreak + 1 : 1;
+      }
+
+      const nextTotalDays =
+        currentLastReadDate === localDateKey
+          ? currentTotalDays
+          : currentTotalDays + 1;
+
+      const mergedHistorySurahs = alreadyLoggedToday
+        ? existingHistorySurahs
+        : [...existingHistorySurahs, surah.englishName];
+
+      const previousHistoryCount = Number(historyData.count || 0);
+      const nextHistoryCount = alreadyLoggedToday
+        ? previousHistoryCount
+        : previousHistoryCount + 1;
+
+      const alreadyCompletedSurah = Array.isArray(userData.completedSurahs)
+        ? userData.completedSurahs.includes(Number(surahNumber))
+        : false;
+
+      const nextCompletedSurahCount = alreadyCompletedSurah
+        ? currentCompletedSurahCount
+        : currentCompletedSurahCount + 1;
+
+      await setDoc(
+        userRef,
+        {
+          uid: user.uid,
+          streak: nextStreak,
+          lastReadDate: localDateKey,
+          totalDays: nextTotalDays,
+          completedSurahCount: nextCompletedSurahCount,
           completedSurahs: arrayUnion(Number(surahNumber)),
           lastFinishedSurah: Number(surahNumber),
           updatedAt: serverTimestamp(),
-        });
-      }
+        },
+        { merge: true },
+      );
 
-      const historySnap = await getDoc(historyRef);
-
-      if (!historySnap.exists()) {
-        await setDoc(historyRef, {
+      await setDoc(
+        historyRef,
+        {
           date: localDateKey,
-          count: 1,
-          surahsCompleted: [Number(surahNumber)],
+          read: true,
+          count: nextHistoryCount,
+          surahsCompleted: mergedHistorySurahs,
           lastSurahFinished: Number(surahNumber),
+          lastUpdatedAt: new Date().toISOString(),
           updatedAt: serverTimestamp(),
-        });
-      } else {
-        await updateDoc(historyRef, {
-          count: increment(1),
-          surahsCompleted: arrayUnion(Number(surahNumber)),
-          lastSurahFinished: Number(surahNumber),
-          updatedAt: serverTimestamp(),
-        });
-      }
+        },
+        { merge: true },
+      );
+
+      const currentSurahCount = surahSnap.exists()
+        ? Number(surahSnap.data().count || 0)
+        : 0;
+
+      await setDoc(
+        surahDocRef,
+        {
+          name: surah.englishName,
+          count: alreadyLoggedToday ? currentSurahCount : currentSurahCount + 1,
+        },
+        { merge: true },
+      );
 
       setIsFinished(true);
     } catch (finishError) {
@@ -536,6 +640,46 @@ function SurahReader() {
       setSidebarLoading(false);
     }
   };
+
+  useEffect(() => {
+    const loadFinishedState = async () => {
+      if (!user || !surah) {
+        setIsFinished(false);
+        return;
+      }
+
+      try {
+        const today = new Date();
+        const localDateKey = [
+          today.getFullYear(),
+          String(today.getMonth() + 1).padStart(2, "0"),
+          String(today.getDate()).padStart(2, "0"),
+        ].join("-");
+
+        const historyRef = doc(db, "users", user.uid, "history", localDateKey);
+        const historySnap = await getDoc(historyRef);
+
+        if (!historySnap.exists()) {
+          setIsFinished(false);
+          return;
+        }
+
+        const historyData = historySnap.data();
+        const existingHistorySurahs = Array.isArray(historyData.surahsCompleted)
+          ? historyData.surahsCompleted
+          : historyData.surah
+            ? [historyData.surah]
+            : [];
+
+        setIsFinished(existingHistorySurahs.includes(surah.englishName));
+      } catch (error) {
+        console.error("Failed to load finish state:", error);
+        setIsFinished(false);
+      }
+    };
+
+    loadFinishedState();
+  }, [user, surah]);
 
   useEffect(() => {
     let cancelled = false;
@@ -842,23 +986,34 @@ function SurahReader() {
                 ← Back
               </button>
 
-              <button
-                onClick={handleFinishSurah}
-                disabled={isFinished || finishingSurah}
-                className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
-                  isFinished
-                    ? "bg-green-100 text-green-700 cursor-default"
+              <div className="flex flex-col items-end gap-2">
+                <button
+                  onClick={handleFinishSurah}
+                  disabled={isFinished || finishingSurah}
+                  className={`inline-flex items-center rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
+                    isFinished
+                      ? "bg-green-100 text-green-700 cursor-default"
+                      : finishingSurah
+                        ? "bg-green-200 text-green-800 cursor-wait"
+                        : "bg-green-700 text-white hover:bg-green-800"
+                  }`}
+                >
+                  {isFinished
+                    ? "Finished"
                     : finishingSurah
-                      ? "bg-green-200 text-green-800 cursor-wait"
-                      : "bg-green-700 text-white hover:bg-green-800"
-                }`}
-              >
-                {isFinished
-                  ? "Finished"
-                  : finishingSurah
-                    ? "Saving..."
-                    : "Finish"}
-              </button>
+                      ? "Saving..."
+                      : "Finish"}
+                </button>
+
+                {isFinished && (
+                  <button
+                    onClick={handleReadAgain}
+                    className="inline-flex items-center rounded-xl px-4 py-2 text-sm font-medium border border-green-200 bg-white text-green-700 hover:bg-green-50 transition-all"
+                  >
+                    Read Again
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="text-center">

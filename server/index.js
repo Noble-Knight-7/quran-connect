@@ -4,7 +4,7 @@ const cors = require("cors");
 const axios = require("axios");
 const dotenv = require("dotenv");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { db } = require("./firebaseAdmin");
+const { getDb } = require("./firebaseAdmin");
 
 dotenv.config();
 
@@ -15,18 +15,68 @@ function stripHtml(text = "") {
   return text.replace(/<[^>]*>/g, "").trim();
 }
 
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+  "https://quran-connect-one.vercel.app",
+];
+
 app.use(
   cors({
-    origin: ["http://localhost:3000", "https://quran-connect-one.vercel.app"],
+    origin(origin, callback) {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      const vercelPreviewPattern =
+        /^https:\/\/quran-connect(?:-[a-zA-Z0-9-]+)?\.vercel\.app$/;
+
+      if (vercelPreviewPattern.test(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
+    },
+    methods: ["GET", "POST", "OPTIONS"],
+    credentials: true,
   }),
 );
+
 app.use(express.json());
 
 app.get("/api/health", (req, res) => {
-  res.json({ ok: true });
+  try {
+    getDb();
+    return res.json({
+      ok: true,
+      firebaseConfigured: true,
+      firebaseError: null,
+    });
+  } catch (error) {
+    return res.json({
+      ok: true,
+      firebaseConfigured: false,
+      firebaseError: error.message,
+    });
+  }
 });
 
 app.get("/api/daily-reconnect", async (req, res) => {
+  let db;
+
+  try {
+    db = getDb();
+  } catch (error) {
+    console.error("Firebase init error:", error.message);
+    return res.status(503).json({
+      error: "Firebase Admin is not configured correctly on the server.",
+    });
+  }
+
   try {
     const date = req.query.date || new Date().toISOString().slice(0, 10);
 
