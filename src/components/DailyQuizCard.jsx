@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   doc,
   getDoc,
@@ -35,6 +35,14 @@ function getCategoryLabel(category) {
   }
 }
 
+function getLocalDateKey(date = new Date()) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
 function DailyQuizCard() {
   const { user } = useAuth();
   const [question, setQuestion] = useState(null);
@@ -44,37 +52,52 @@ function DailyQuizCard() {
   const [isCorrect, setIsCorrect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [loadError, setLoadError] = useState("");
+  const [saveError, setSaveError] = useState("");
 
-  const dateKey = useMemo(() => {
-    return new Date().toISOString().slice(0, 10);
-  }, []);
+  const dateKey = useMemo(() => getLocalDateKey(), []);
+
+  const loadQuiz = useCallback(async () => {
+    setLoading(true);
+    setLoadError("");
+    setSaveError("");
+
+    try {
+      const todayQuestion = getDailyQuestion();
+      setQuestion(todayQuestion);
+
+      if (user) {
+        const quizRef = doc(db, "users", user.uid, "dailyQuiz", dateKey);
+        const quizSnap = await getDoc(quizRef);
+
+        if (quizSnap.exists()) {
+          const data = quizSnap.data();
+          setSelectedAnswer(data.selectedAnswer || "");
+          setSubmitted(true);
+          setIsCorrect(!!data.isCorrect);
+        } else {
+          setSelectedAnswer("");
+          setSubmitted(false);
+          setIsCorrect(false);
+        }
+      } else {
+        setSelectedAnswer("");
+        setSubmitted(false);
+        setIsCorrect(false);
+      }
+    } catch (error) {
+      console.error("Daily quiz load error:", error);
+      setLoadError(
+        "We could not load today’s Quran challenge right now. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [user, dateKey]);
 
   useEffect(() => {
-    const loadQuiz = async () => {
-      try {
-        const todayQuestion = getDailyQuestion();
-        setQuestion(todayQuestion);
-
-        if (user) {
-          const quizRef = doc(db, "users", user.uid, "dailyQuiz", dateKey);
-          const quizSnap = await getDoc(quizRef);
-
-          if (quizSnap.exists()) {
-            const data = quizSnap.data();
-            setSelectedAnswer(data.selectedAnswer || "");
-            setSubmitted(true);
-            setIsCorrect(!!data.isCorrect);
-          }
-        }
-      } catch (error) {
-        console.error("Daily quiz load error:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     loadQuiz();
-  }, [user, dateKey]);
+  }, [loadQuiz]);
 
   const handleSubmit = async () => {
     if (!user || !question || !selectedAnswer || submitted) return;
@@ -84,6 +107,7 @@ function DailyQuizCard() {
     setIsCorrect(correct);
     setSaving(true);
     setMessage("");
+    setSaveError("");
 
     try {
       const quizRef = doc(db, "users", user.uid, "dailyQuiz", dateKey);
@@ -120,7 +144,10 @@ function DailyQuizCard() {
       );
     } catch (error) {
       console.error("Daily quiz save error:", error);
-      setMessage("Your answer could not be saved.");
+      setSaveError(
+        "Your answer could not be saved. Please try submitting again.",
+      );
+      setSubmitted(false);
     } finally {
       setSaving(false);
     }
@@ -129,15 +156,54 @@ function DailyQuizCard() {
   if (loading) {
     return (
       <div className="bg-white rounded-3xl shadow-md p-6 mb-6 border border-green-100 w-full">
-        <p className="text-gray-400">Loading today's Quran challenge...</p>
+        <p className="text-gray-400">Loading today&apos;s Quran challenge...</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="bg-white rounded-3xl shadow-md p-6 mb-6 border border-amber-200 w-full">
+        <div className="flex items-start gap-4">
+          <div className="text-2xl">⚠️</div>
+          <div className="flex-1">
+            <p className="text-lg font-bold text-gray-900 mb-1">
+              Daily challenge unavailable
+            </p>
+            <p className="text-sm text-gray-600 mb-4">{loadError}</p>
+            <button
+              onClick={loadQuiz}
+              className="bg-green-600 text-white font-semibold px-4 py-2 rounded-2xl hover:bg-green-700 transition-all"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (!question) {
     return (
-      <div className="bg-white rounded-3xl shadow-md p-6 mb-6 border border-green-100 w-full">
-        <p className="text-gray-400">Could not load today's challenge.</p>
+      <div className="bg-white rounded-3xl shadow-md p-6 mb-6 border border-amber-200 w-full">
+        <div className="flex items-start gap-4">
+          <div className="text-2xl">📘</div>
+          <div className="flex-1">
+            <p className="text-lg font-bold text-gray-900 mb-1">
+              No challenge available
+            </p>
+            <p className="text-sm text-gray-600 mb-4">
+              Today&apos;s challenge could not be prepared. Please refresh and
+              try again.
+            </p>
+            <button
+              onClick={loadQuiz}
+              className="bg-green-600 text-white font-semibold px-4 py-2 rounded-2xl hover:bg-green-700 transition-all"
+            >
+              Reload Challenge
+            </button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -162,9 +228,17 @@ function DailyQuizCard() {
         </div>
       </div>
 
+      {!user && (
+        <div className="mb-5 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+          <p className="text-sm text-blue-800 font-medium">
+            Sign in to save your answer and build your learning history.
+          </p>
+        </div>
+      )}
+
       <div className="bg-green-50 rounded-2xl p-5 mb-5 border border-green-100">
         <p className="text-sm font-bold uppercase tracking-wider text-green-700 mb-3">
-          Today's Question
+          Today&apos;s Question
         </p>
         <p className="text-lg font-semibold text-gray-900 leading-relaxed">
           {question.question}
@@ -222,6 +296,12 @@ function DailyQuizCard() {
 
       {message && (
         <div className="mb-4 text-sm font-medium text-green-700">{message}</div>
+      )}
+
+      {saveError && (
+        <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 p-4">
+          <p className="text-sm font-medium text-red-700">{saveError}</p>
+        </div>
       )}
 
       <div className="flex gap-3">

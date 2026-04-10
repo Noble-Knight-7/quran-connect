@@ -123,9 +123,18 @@ const getDaysDiff = (dateStr1, dateStr2) => {
   if (!dateStr1 || !dateStr2) return null;
   const [y1, m1, d1] = dateStr1.split("-");
   const [y2, m2, d2] = dateStr2.split("-");
-  const date1 = new Date(y1, m1 - 1, d1);
-  const date2 = new Date(y2, m2 - 1, d2);
+  const date1 = new Date(Number(y1), Number(m1) - 1, Number(d1));
+  const date2 = new Date(Number(y2), Number(m2) - 1, Number(d2));
   return Math.round((date1 - date2) / (1000 * 60 * 60 * 24));
+};
+
+const getTodayString = () => {
+  const today = new Date();
+  return [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
 };
 
 function StreakTracker({ userId }) {
@@ -138,13 +147,6 @@ function StreakTracker({ userId }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSurahs, setSelectedSurahs] = useState([]);
   const [todaySurahs, setTodaySurahs] = useState([]);
-
-  const getTodayString = () => {
-    const today = new Date();
-    return new Date(today.getTime() - today.getTimezoneOffset() * 60000)
-      .toISOString()
-      .split("T")[0];
-  };
 
   useEffect(() => {
     const loadStreak = async () => {
@@ -208,32 +210,17 @@ function StreakTracker({ userId }) {
     setSaving(true);
 
     try {
-      const diff = getDaysDiff(today, lastReadDate);
-
-      let newStreak = streak;
-      if (!readToday) {
-        if (diff === 1) {
-          newStreak = streak + 1;
-        } else if (diff === 2 && streak > 0) {
-          newStreak = streak + 1;
-        } else {
-          newStreak = 1;
-        }
-
-        setStreak(newStreak);
-        setLastReadDate(today);
-        setReadToday(true);
-
-        const userDoc = doc(db, "users", userId);
-        await setDoc(
-          userDoc,
-          { streak: newStreak, lastReadDate: today },
-          { merge: true },
-        );
-      }
-
+      const userDoc = doc(db, "users", userId);
       const historyDoc = doc(db, "users", userId, "history", today);
-      const historySnap = await getDoc(historyDoc);
+
+      const [userSnap, historySnap] = await Promise.all([
+        getDoc(userDoc),
+        getDoc(historyDoc),
+      ]);
+
+      const userData = userSnap.exists() ? userSnap.data() : {};
+      const currentStreak = Number(userData.streak || 0);
+      const currentLastReadDate = userData.lastReadDate || null;
 
       const existingHistory = historySnap.exists() ? historySnap.data() : {};
       const existingSurahs = Array.isArray(existingHistory.surahsCompleted)
@@ -242,9 +229,42 @@ function StreakTracker({ userId }) {
           ? [existingHistory.surah]
           : [];
 
-      const mergedSurahs = [...new Set([...existingSurahs, ...selectedSurahs])];
+      const newUniqueSurahs = selectedSurahs.filter(
+        (surah) => !existingSurahs.includes(surah),
+      );
+
+      if (!newUniqueSurahs.length) {
+        setSelectedSurahs([]);
+        setSaving(false);
+        return;
+      }
+
+      const diff = getDaysDiff(today, currentLastReadDate);
+
+      let newStreak = currentStreak;
+
+      if (currentLastReadDate === today) {
+        newStreak = currentStreak || 1;
+      } else if (diff === 1) {
+        newStreak = currentStreak + 1;
+      } else {
+        newStreak = 1;
+      }
+
+      const mergedSurahs = [
+        ...new Set([...existingSurahs, ...newUniqueSurahs]),
+      ];
       const previousCount = Number(existingHistory.count || 0);
-      const addedCount = selectedSurahs.length;
+      const addedCount = newUniqueSurahs.length;
+
+      await setDoc(
+        userDoc,
+        {
+          streak: newStreak,
+          lastReadDate: today,
+        },
+        { merge: true },
+      );
 
       await setDoc(
         historyDoc,
@@ -258,7 +278,7 @@ function StreakTracker({ userId }) {
         { merge: true },
       );
 
-      for (const surah of selectedSurahs) {
+      for (const surah of newUniqueSurahs) {
         const surahDoc = doc(db, "users", userId, "surahs", surah);
         const surahSnap = await getDoc(surahDoc);
         const currentCount = surahSnap.exists()
@@ -272,6 +292,9 @@ function StreakTracker({ userId }) {
         );
       }
 
+      setStreak(newStreak);
+      setLastReadDate(today);
+      setReadToday(true);
       setTodaySurahs(mergedSurahs);
       setSelectedSurahs([]);
     } finally {
@@ -281,13 +304,13 @@ function StreakTracker({ userId }) {
 
   const todayStr = getTodayString();
   const diff = getDaysDiff(todayStr, lastReadDate);
-  const isAtRisk = diff === 2 && streak > 0 && !readToday;
+  const isAtRisk = diff === 1 && streak > 0 && !readToday;
 
   const getMotivation = () => {
     if (isAtRisk) {
       return {
         emoji: "⚠️",
-        message: "Streak at risk! Read today to recover it.",
+        message: "Streak at risk! Read today to keep it alive.",
         color: "text-orange-600",
       };
     }
@@ -396,7 +419,7 @@ function StreakTracker({ userId }) {
       </div>
 
       {selectedSurahs.length > 0 && (
-        <div className="mb-4 strink-0">
+        <div className="mb-4 shrink-0">
           <p className="text-[11px] font-black uppercase tracking-widest text-gray-500 mb-2">
             Ready to log
           </p>
@@ -447,9 +470,7 @@ function StreakTracker({ userId }) {
           ? "Saving..."
           : readToday
             ? `Add ${selectedSurahs.length || ""} more surah${selectedSurahs.length === 1 ? "" : "s"}`
-            : isAtRisk
-              ? "Use Streak Recovery"
-              : "Log today’s reading"}
+            : "Log today’s reading"}
       </button>
 
       {lastReadDate && (

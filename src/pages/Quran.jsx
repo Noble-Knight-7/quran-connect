@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
+const API_BASE = "https://api.quran.com/api/v4";
+
 function Quran() {
   const [surahs, setSurahs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -8,20 +10,38 @@ function Quran() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch("https://api.alquran.cloud/v1/surah")
-      .then((res) => res.json())
-      .then((data) => {
-        setSurahs(data.data);
+    const loadSurahs = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/chapters?language=en`);
+
+        if (!response.ok) {
+          throw new Error(`Failed to load surahs: ${response.status}`);
+        }
+
+        const data = await response.json();
+        setSurahs(data.chapters || []);
+      } catch (error) {
+        console.error("Failed to load surah list:", error);
+        setSurahs([]);
+      } finally {
         setLoading(false);
-      });
+      }
+    };
+
+    loadSurahs();
   }, []);
 
-  const filtered = surahs.filter(
-    (s) =>
-      s.englishName.toLowerCase().includes(search.toLowerCase()) ||
-      s.englishNameTranslation.toLowerCase().includes(search.toLowerCase()) ||
-      String(s.number).includes(search),
-  );
+  const filtered = surahs.filter((s) => {
+    const englishName = String(s.name_simple || "").toLowerCase();
+    const translatedName = String(s.translated_name?.name || "").toLowerCase();
+    const searchValue = search.toLowerCase();
+
+    return (
+      englishName.includes(searchValue) ||
+      translatedName.includes(searchValue) ||
+      String(s.id).includes(search)
+    );
+  });
 
   const QUICK_LINKS = [
     { name: "Al-Kahf", num: 18 },
@@ -39,7 +59,6 @@ function Quran() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10 pb-32 md:pb-10">
-      {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-end justify-between mb-10 gap-6">
         <div>
           <h1 className="text-3xl font-black text-green-900 tracking-tight">
@@ -50,14 +69,15 @@ function Quran() {
           </p>
         </div>
         <div className="bg-green-50 px-4 py-2 rounded-2xl border border-green-100">
-          <span className="text-green-800 font-black text-xl">114</span>
+          <span className="text-green-800 font-black text-xl">
+            {surahs.length || 114}
+          </span>
           <span className="text-green-600 text-[10px] font-bold uppercase tracking-widest ml-2">
             Total Surahs
           </span>
         </div>
       </div>
 
-      {/* Search & Quick Navigation */}
       <div className="flex flex-col lg:flex-row gap-4 mb-10 items-center">
         <div className="relative w-full lg:flex-1">
           <span className="absolute left-5 top-1/2 -translate-y-1/2 text-lg">
@@ -85,54 +105,54 @@ function Quran() {
         </div>
       </div>
 
-      {/* Surah Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filtered.map((surah) => (
           <div
-            key={surah.number}
-            onClick={() => navigate(`/quran/${surah.number}`)}
+            key={surah.id}
+            onClick={() => navigate(`/quran/${surah.id}`)}
             className="group bg-white rounded-3xl p-6 shadow-sm border border-gray-50 hover:border-green-200 hover:shadow-xl hover:-translate-y-1 transition-all cursor-pointer flex items-center justify-between"
           >
             <div className="flex items-center gap-5">
-              {/* Number Badge with fancy styling */}
               <div className="relative w-12 h-12 flex-shrink-0">
                 <div className="absolute inset-0 bg-green-100 rounded-2xl rotate-12 group-hover:rotate-45 transition-transform duration-500"></div>
                 <div className="absolute inset-0 bg-white border-2 border-green-500 rounded-2xl flex items-center justify-center">
                   <span className="text-green-800 font-black text-sm">
-                    {surah.number}
+                    {surah.id}
                   </span>
                 </div>
               </div>
 
-              {/* Info */}
               <div className="min-w-0">
                 <h3 className="font-black text-gray-800 text-lg leading-tight group-hover:text-green-700 transition-colors">
-                  {surah.englishName}
+                  {surah.name_simple}
                 </h3>
                 <p className="text-gray-400 text-[10px] font-bold uppercase tracking-widest mt-1">
-                  {surah.englishNameTranslation}
+                  {surah.translated_name?.name}
                 </p>
                 <div className="flex items-center gap-2 mt-2">
                   <span
                     className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${
-                      surah.revelationType === "Meccan"
+                      surah.revelation_place === "makkah"
                         ? "bg-purple-50 text-purple-600"
                         : "bg-amber-50 text-amber-600"
                     }`}
                   >
-                    {surah.revelationType}
+                    {surah.revelation_place}
                   </span>
                   <span className="text-[9px] font-black text-gray-300 uppercase">
-                    {surah.numberOfAyahs} Verses
+                    {surah.verses_count} Verses
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Arabic Title */}
             <div className="text-right">
-              <p className="text-2xl font-black text-green-900 mb-1" dir="rtl">
-                {surah.name}
+              <p
+                className="text-2xl font-black text-green-900 mb-1"
+                dir="rtl"
+                style={{ fontFamily: "serif" }}
+              >
+                {surah.name_arabic}
               </p>
               <div className="w-8 h-1 bg-green-100 rounded-full ml-auto group-hover:w-full transition-all duration-500"></div>
             </div>
@@ -140,7 +160,6 @@ function Quran() {
         ))}
       </div>
 
-      {/* No results state */}
       {filtered.length === 0 && (
         <div className="text-center py-20 bg-white rounded-3xl border border-dashed border-gray-200">
           <p className="text-4xl mb-4">📖</p>

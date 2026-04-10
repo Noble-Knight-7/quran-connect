@@ -26,64 +26,6 @@ app.get("/api/health", (req, res) => {
   res.json({ ok: true });
 });
 
-app.post("/api/tafsir-lesson", async (req, res) => {
-  try {
-    const { verseKey } = req.body;
-
-    if (!verseKey) {
-      return res.status(400).json({ error: "verseKey is required" });
-    }
-
-    const tafsirResponse = await axios.get(
-      `https://api.quran.com/api/v4/tafsirs/169/by_ayah/${verseKey}`,
-    );
-
-    let tafsirText = tafsirResponse?.data?.tafsir?.text || "";
-    tafsirText = tafsirText.replace(/<[^>]*>/g, "").trim();
-
-    if (!tafsirText) {
-      return res.status(404).json({ error: "No tafsir found for this verse" });
-    }
-
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: "gemini-flash-latest" });
-
-    const prompt = `
-You are a helpful Quran study assistant.
-
-Given this tafsir, do two things:
-1. Explain the tafsir in simple modern English in 3-5 sentences.
-2. Give a short practical lesson the user can apply today in 1-2 sentences.
-
-Keep the tone reflective, warm, and easy to understand.
-Do not invent facts beyond the tafsir.
-
-Tafsir:
-${tafsirText}
-    `;
-
-    const result = await model.generateContent(prompt);
-    const aiText = result.response.text();
-
-    res.json({
-      tafsir: tafsirText,
-      aiLesson: aiText,
-    });
-  } catch (error) {
-    console.error(
-      "tafsir-lesson error:",
-      error?.response?.data || error.message,
-    );
-    res.status(500).json({
-      error: "Failed to fetch tafsir or generate lesson",
-    });
-  }
-});
-if (process.env.NODE_ENV !== "production") {
-  app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
-}
 app.get("/api/daily-reconnect", async (req, res) => {
   try {
     const date = req.query.date || new Date().toISOString().slice(0, 10);
@@ -193,4 +135,66 @@ app.get("/api/daily-reconnect", async (req, res) => {
     });
   }
 });
+
+app.post("/api/verse-reflection", async (req, res) => {
+  try {
+    const { verseKey, translationText, tafsirText, surahName, verseNumber } =
+      req.body;
+
+    if (!verseKey) {
+      return res.status(400).json({ error: "verseKey is required" });
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({ error: "Missing GEMINI_API_KEY" });
+    }
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({
+      model: "gemini-flash-latest",
+    });
+
+    const prompt = `
+You are a thoughtful Quran reflection assistant.
+
+Given the Quran verse translation and tafsir below, write a short reflection for the user.
+
+Rules:
+- Write 3-5 sentences.
+- Keep it spiritually warm, clear, and grounded.
+- Do not invent facts beyond the verse and tafsir.
+- Focus on personal reflection, sincerity, worship, character, or trust in Allah where appropriate.
+- End with one short practical takeaway sentence.
+
+Verse Key: ${verseKey}
+Surah: ${surahName || ""}
+Ayah: ${verseNumber || ""}
+Translation: ${translationText || ""}
+Tafsir: ${tafsirText || ""}
+    `;
+
+    const result = await model.generateContent(prompt);
+    const reflection = result.response.text();
+
+    return res.json({ reflection });
+  } catch (error) {
+    console.error(
+      "verse-reflection error:",
+      error?.response?.data || error.message,
+    );
+
+    return res.status(500).json({
+      error: error?.message || "Failed to generate verse reflection",
+    });
+  }
+});
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
 module.exports = app;

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import {
   collection,
   addDoc,
@@ -19,6 +18,8 @@ const API_BASE = "https://api.quran.com/api/v4";
 const DEFAULT_RECITATION_ID = 7;
 const DEFAULT_TRANSLATION_ID = 20;
 const DEFAULT_TAFSIR_ID = 169;
+const API_BASE_URL =
+  process.env.REACT_APP_API_BASE_URL || "http://localhost:5000";
 
 const FALLBACK_TRANSLATIONS = [
   { id: 20, name: "The Clear Quran", language_name: "English" },
@@ -51,6 +52,57 @@ const getNestedText = (value) => {
   if (typeof value.name === "string") return value.name;
   if (typeof value.translation === "string") return value.translation;
   return "";
+};
+
+const normalizeFootnotes = (footNotes) => {
+  if (!footNotes) return [];
+
+  if (Array.isArray(footNotes)) {
+    return footNotes
+      .map((item, index) => {
+        if (typeof item === "string") {
+          return { id: String(index + 1), text: item };
+        }
+
+        if (item && typeof item === "object") {
+          return {
+            id: String(item.id || item.foot_note_id || index + 1),
+            text: String(item.text || item.html || item.value || ""),
+          };
+        }
+
+        return null;
+      })
+      .filter((item) => item && item.text.trim());
+  }
+
+  if (typeof footNotes === "string") {
+    return footNotes.trim() ? [{ id: "1", text: footNotes }] : [];
+  }
+
+  if (typeof footNotes === "object") {
+    return Object.entries(footNotes)
+      .map(([id, value], index) => {
+        if (typeof value === "string") {
+          return {
+            id: String(id || index + 1),
+            text: value,
+          };
+        }
+
+        if (value && typeof value === "object") {
+          return {
+            id: String(value.id || value.foot_note_id || id || index + 1),
+            text: String(value.text || value.html || value.value || ""),
+          };
+        }
+
+        return null;
+      })
+      .filter((item) => item && item.text.trim());
+  }
+
+  return [];
 };
 
 async function fetchAllVersesByChapter(
@@ -88,6 +140,7 @@ async function fetchAllVersesByChapter(
     const response = await fetch(
       `${API_BASE}/verses/by_chapter/${chapterNumber}?${params}`,
     );
+
     if (!response.ok) {
       throw new Error(`Failed loading verses: ${response.status}`);
     }
@@ -105,16 +158,23 @@ async function fetchAllVersesByChapter(
 
 async function fetchTranslationMap(chapterNumber, translationId) {
   const res = await fetch(
-    `${API_BASE}/quran/translations/${translationId}?chapter_number=${chapterNumber}`,
+    `${API_BASE}/quran/translations/${translationId}?chapter_number=${chapterNumber}&fields=verse_key,text,resource_name&foot_notes=true`,
   );
+
   if (!res.ok) {
     throw new Error(`Failed loading translation map: ${res.status}`);
   }
+
   const data = await res.json();
   const map = {};
+
   (data.translations || []).forEach((item) => {
-    map[item.verse_key] = item;
+    map[item.verse_key] = {
+      ...item,
+      normalizedFootnotes: normalizeFootnotes(item.foot_notes),
+    };
   });
+
   return map;
 }
 
@@ -148,10 +208,8 @@ function SurahReader() {
   const [reflectionText, setReflectionText] = useState("");
   const [sidebarLoading, setSidebarLoading] = useState(false);
   const [aiLesson, setAiLesson] = useState("");
-  const [footnotes, setFootnotes] = useState({});
-
+  const [footnotes, setFootnotes] = useState([]);
   const [tafsirData, setTafsirData] = useState("");
-  const [tafsirLoading] = useState(false); // Added missing state if you plan to use it inline
 
   const [isSurahPlaying, setIsSurahPlaying] = useState(false);
   const [playingVerseKey, setPlayingVerseKey] = useState(null);
@@ -161,6 +219,9 @@ function SurahReader() {
   const verseAudioRef = useRef(null);
   const surahQueueRef = useRef([]);
   const surahQueueIndexRef = useRef(0);
+  const tafsirCacheRef = useRef(new Map());
+  const aiReflectionCacheRef = useRef(new Map());
+
   const [reflectionSaved, setReflectionSaved] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [finishingSurah, setFinishingSurah] = useState(false);
@@ -262,7 +323,6 @@ function SurahReader() {
   const stopSurahPlayback = () => {
     if (surahAudioRef.current) {
       surahAudioRef.current.pause();
-      // surahAudioRef.current.currentTime = 0;
       surahAudioRef.current.onended = null;
       surahAudioRef.current = null;
     }
@@ -274,6 +334,7 @@ function SurahReader() {
 
   const playSurahQueueAtIndex = (index) => {
     const queue = surahQueueRef.current;
+
     if (!queue[index]) {
       stopSurahPlayback();
       return;
@@ -281,6 +342,7 @@ function SurahReader() {
 
     const verse = queue[index];
     const audioUrl = verse.audio?.url;
+
     if (!audioUrl) {
       playSurahQueueAtIndex(index + 1);
       return;
@@ -336,12 +398,17 @@ function SurahReader() {
       surahAudioRef.current.pause();
       setIsSurahPlaying(false);
     } else {
-      surahAudioRef.current.play();
+      surahAudioRef.current.play().catch((playError) => {
+        console.error("Could not resume surah recitation", playError);
+        stopSurahPlayback();
+      });
       setIsSurahPlaying(true);
     }
   };
+
   const handleVerseAudioToggle = (verse) => {
     stopSurahPlayback();
+
     const audioUrl = verse.audio?.url;
     if (!audioUrl) return;
 
@@ -357,6 +424,7 @@ function SurahReader() {
         ? audioUrl
         : `https://verses.quran.com/${audioUrl}`,
     );
+
     verseAudioRef.current = audio;
     setPlayingVerseKey(verse.verse_key);
 
@@ -370,55 +438,93 @@ function SurahReader() {
     });
   };
 
+  const generateVerseReflection = async ({
+    verseKey,
+    translationText,
+    tafsirText,
+    surahName,
+    verseNumber,
+  }) => {
+    const response = await fetch(`${API_BASE_URL}/api/verse-reflection`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        verseKey,
+        translationText,
+        tafsirText,
+        surahName,
+        verseNumber,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data?.error || "Failed to generate reflection");
+    }
+
+    return data.reflection;
+  };
+
   const loadSidebarContent = async (verse) => {
     if (!verse) return;
 
     setSidebarLoading(true);
-    setAiLesson("");
-    setFootnotes({});
+    setFootnotes(verse.footnotes || []);
     setTafsirData("");
+    setAiLesson("");
+
+    const tafsirCacheKey = `${tafsirId}:${verse.verse_key}`;
+    const aiCacheKey = `${translationId}:${tafsirId}:${verse.verse_key}:${stripHtml(verse.translationText || "")}`;
 
     try {
-      const [tafsirRes, translationRes] = await Promise.all([
-        fetch(`${API_BASE}/tafsirs/${tafsirId}/by_ayah/${verse.verse_key}`),
-        fetch(
-          `${API_BASE}/quran/translations/${translationId}?chapter_number=${surahNumber}&fields=verse_key,text,resource_name&foot_notes=true`,
-        ),
-      ]);
-
       let cleanTafsirText =
         "Could not load tafsir at this time. Please try again.";
-      if (tafsirRes.ok) {
-        const tafsirPayload = await tafsirRes.json();
-        cleanTafsirText =
-          stripHtml(tafsirPayload.tafsir?.text || "") || cleanTafsirText;
+
+      if (tafsirCacheRef.current.has(tafsirCacheKey)) {
+        cleanTafsirText = tafsirCacheRef.current.get(tafsirCacheKey);
+      } else {
+        const tafsirRes = await fetch(
+          `${API_BASE}/tafsirs/${tafsirId}/by_ayah/${verse.verse_key}`,
+        );
+
+        if (tafsirRes.ok) {
+          const tafsirPayload = await tafsirRes.json();
+          cleanTafsirText =
+            stripHtml(tafsirPayload.tafsir?.text || "") || cleanTafsirText;
+        }
+
+        tafsirCacheRef.current.set(tafsirCacheKey, cleanTafsirText);
       }
+
       setTafsirData(cleanTafsirText);
 
-      if (translationRes.ok) {
-        const translationPayload = await translationRes.json();
-        const matchingTranslation = (
-          translationPayload.translations || []
-        ).find((item) => item.verse_key === verse.verse_key);
-        setFootnotes(matchingTranslation?.foot_notes || {});
-      }
-
-      if (process.env.GEMINI_API_KEY) {
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({
-          model: "gemini-flash-latest",
-        });
-        const prompt = `Explain the tafsir of Quran verse ${verse.verse_key} in 3-5 short, simple sentences for an everyday reader. Focus on spiritual lesson and practical takeaway.
-
-Verse translation: ${stripHtml(verse.translationText)}
-
-Tafsir context: ${cleanTafsirText}`;
-        const result = await model.generateContent(prompt);
-        setAiLesson(result.response.text());
+      if (aiReflectionCacheRef.current.has(aiCacheKey)) {
+        setAiLesson(aiReflectionCacheRef.current.get(aiCacheKey));
       } else {
-        setAiLesson(
-          "Reflect on what Allah is teaching here, and identify one action you can take today.",
-        );
+        try {
+          const reflection = await generateVerseReflection({
+            verseKey: verse.verse_key,
+            translationText: stripHtml(verse.translationText || ""),
+            tafsirText: cleanTafsirText,
+            surahName: surah?.englishName || surah?.name || "",
+            verseNumber: verse.verse_number,
+          });
+
+          const lesson =
+            reflection ||
+            "Reflect on what Allah is teaching here, and identify one action you can take today.";
+
+          aiReflectionCacheRef.current.set(aiCacheKey, lesson);
+          setAiLesson(lesson);
+        } catch (aiError) {
+          console.error("AI reflection error:", aiError.message);
+          setAiLesson(
+            "Reflect on what Allah is teaching here, and identify one action you can take today.",
+          );
+        }
       }
     } catch (sidebarError) {
       console.error("Error fetching reflection data", sidebarError);
@@ -444,6 +550,7 @@ Tafsir context: ${cleanTafsirText}`;
         const translationsData = translationsRes.ok
           ? await translationsRes.json()
           : { translations: FALLBACK_TRANSLATIONS };
+
         const tafsirsData = tafsirsRes.ok
           ? await tafsirsRes.json()
           : { tafsirs: FALLBACK_TAFSIRS };
@@ -463,15 +570,20 @@ Tafsir context: ${cleanTafsirText}`;
 
             return isEnglish && !isTransliteration;
           });
+
           const englishTafsirs = (tafsirsData.tafsirs || []).filter((item) =>
             String(item.language_name || "")
               .toLowerCase()
               .includes("english"),
           );
 
-          if (englishTranslations.length)
+          if (englishTranslations.length) {
             setTranslationOptions(englishTranslations);
-          if (englishTafsirs.length) setTafsirOptions(englishTafsirs);
+          }
+
+          if (englishTafsirs.length) {
+            setTafsirOptions(englishTafsirs);
+          }
         }
       } catch (resourceError) {
         console.error("Could not load resources", resourceError);
@@ -479,6 +591,7 @@ Tafsir context: ${cleanTafsirText}`;
     }
 
     loadResources();
+
     return () => {
       cancelled = true;
     };
@@ -496,43 +609,37 @@ Tafsir context: ${cleanTafsirText}`;
         setSelectedVerse(null);
         setIsSidebarOpen(false);
         setAiLesson("");
-        setFootnotes({});
+        setFootnotes([]);
         setTafsirData("");
         setIsFinished(false);
+        setReflectionText("");
+        setReflectionSaved(false);
+        tafsirCacheRef.current.clear();
+        aiReflectionCacheRef.current.clear();
 
         const chapterRes = await fetch(
           `${API_BASE}/chapters/${surahNumber}?language=en`,
         );
+
         if (!chapterRes.ok) {
           throw new Error(`Failed loading chapter: ${chapterRes.status}`);
         }
+
         const chapterData = await chapterRes.json();
         const chapter = chapterData.chapter;
 
-        const versesData = await fetchAllVersesByChapter(
-          surahNumber,
-          translationId,
-          recitationId,
-        );
-
-        let fallbackTranslationMap = {};
-        const translationsMissing = versesData.every(
-          (verse) => !stripHtml(verse.translations?.[0]?.text || ""),
-        );
-
-        if (translationsMissing) {
-          try {
-            fallbackTranslationMap = await fetchTranslationMap(
-              surahNumber,
-              translationId,
-            );
-          } catch (translationMapError) {
-            console.error(
-              "Could not load translation fallback",
-              translationMapError,
-            );
-          }
-        }
+        const [versesData, translationMap] = await Promise.all([
+          fetchAllVersesByChapter(surahNumber, translationId, recitationId),
+          fetchTranslationMap(surahNumber, translationId).catch(
+            (translationMapError) => {
+              console.error(
+                "Could not load translation map / footnotes fallback",
+                translationMapError,
+              );
+              return {};
+            },
+          ),
+        ]);
 
         const bismillahVariants = [
           "بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ",
@@ -553,23 +660,26 @@ Tafsir context: ${cleanTafsirText}`;
         const normalizedVerses = versesData.map((verse) => {
           const verseNumber =
             verse.verse_number || extractVerseNumber(verse.verse_key);
+
           const verseText =
             chapter.bismillah_pre && verse.verse_key === `${surahNumber}:1`
               ? stripLeadingBismillah(verse.text_uthmani)
               : verse.text_uthmani;
 
-          const fallbackTranslation = fallbackTranslationMap[verse.verse_key];
+          const translationFromVerse = verse.translations?.[0];
+          const translationFallback = translationMap[verse.verse_key];
 
           return {
             ...verse,
             verse_number: verseNumber,
             text_uthmani: verseText,
             translationText:
-              verse.translations?.[0]?.text || fallbackTranslation?.text || "",
+              translationFromVerse?.text || translationFallback?.text || "",
             translationName:
-              verse.translations?.[0]?.resource_name ||
-              fallbackTranslation?.resource_name ||
+              translationFromVerse?.resource_name ||
+              translationFallback?.resource_name ||
               selectedTranslationLabel,
+            footnotes: translationFallback?.normalizedFootnotes || [],
             transliterationText: verse.words
               ?.map((word) => getNestedText(word?.transliteration))
               .filter(Boolean)
@@ -613,11 +723,24 @@ Tafsir context: ${cleanTafsirText}`;
   }, [surahNumber, translationId, recitationId, selectedTranslationLabel]);
 
   useEffect(() => {
+    if (!selectedVerse || !verses.length) return;
+
+    const updatedMatch = verses.find(
+      (verse) => verse.verse_key === selectedVerse.verse_key,
+    );
+
+    if (updatedMatch && updatedMatch !== selectedVerse) {
+      setSelectedVerse(updatedMatch);
+    }
+  }, [verses, selectedVerse]);
+
+  useEffect(() => {
     if (selectedVerse && isSidebarOpen) {
       loadSidebarContent(selectedVerse);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVerse?.verse_key, isSidebarOpen, translationId, tafsirId]);
+  }, [selectedVerse, isSidebarOpen, tafsirId, translationId]);
+
   useEffect(() => {
     const openVerseKey = location.state?.openVerseKey;
     if (!openVerseKey || !verses.length) return;
@@ -625,12 +748,14 @@ Tafsir context: ${cleanTafsirText}`;
     const matchedVerse = verses.find(
       (verse) => verse.verse_key === openVerseKey,
     );
+
     if (!matchedVerse) return;
 
     setSelectedVerse(matchedVerse);
     setIsSidebarOpen(true);
     setReflectionText("");
   }, [location.state?.openVerseKey, verses]);
+
   useEffect(() => {
     if (!selectedVerse || !location.state?.openVerseKey) return;
 
@@ -671,13 +796,17 @@ Tafsir context: ${cleanTafsirText}`;
       console.error("Save error:", saveError);
     }
   };
+
   const goToPrev = () => {
-    if (Number(surahNumber) > 1) navigate(`/quran/${Number(surahNumber) - 1}`);
+    if (Number(surahNumber) > 1) {
+      navigate(`/quran/${Number(surahNumber) - 1}`);
+    }
   };
 
   const goToNext = () => {
-    if (Number(surahNumber) < 114)
+    if (Number(surahNumber) < 114) {
       navigate(`/quran/${Number(surahNumber) + 1}`);
+    }
   };
 
   if (loading) {
@@ -704,7 +833,6 @@ Tafsir context: ${cleanTafsirText}`;
         className={`min-w-0 flex-1 transition-all duration-300 ${isSidebarOpen ? "md:mr-96" : "mr-0"}`}
       >
         <div className="w-full max-w-4xl mx-auto px-4 py-10">
-          {/* Surah Header Card */}
           <div className="bg-white rounded-2xl p-6 shadow-md mb-6">
             <div className="flex items-center justify-between mb-4">
               <button
@@ -732,6 +860,7 @@ Tafsir context: ${cleanTafsirText}`;
                     : "Finish"}
               </button>
             </div>
+
             <div className="text-center">
               <p className="text-green-500 text-sm font-medium mb-1">
                 Surah {surah.number} • {surah.revelationType} •{" "}
@@ -789,7 +918,6 @@ Tafsir context: ${cleanTafsirText}`;
             </div>
           </div>
 
-          {/* Settings Bar */}
           <div className="flex flex-wrap items-center gap-3 mb-6 bg-white rounded-2xl px-5 py-4 shadow-sm justify-between">
             <div className="flex items-center gap-1">
               {fontSizes.map((f) => (
@@ -856,7 +984,6 @@ Tafsir context: ${cleanTafsirText}`;
             </div>
           )}
 
-          {/* Verses List */}
           <div className="flex flex-col gap-6">
             {verses.map((verse) => {
               const isCurrentSurahVerse = activeAyah === verse.verse_number;
@@ -973,6 +1100,7 @@ Tafsir context: ${cleanTafsirText}`;
                             word.transliteration,
                           );
                           const translation = getNestedText(word.translation);
+
                           return (
                             <div
                               key={`${verse.verse_key}-word-${index}`}
@@ -1001,18 +1129,11 @@ Tafsir context: ${cleanTafsirText}`;
                       </div>
                     </div>
                   )}
-                  {/* Optional tafsir inline display if needed */}
-                  {tafsirLoading && (
-                    <p className="text-sm text-gray-500 mt-4">
-                      Loading tafsir...
-                    </p>
-                  )}
                 </div>
               );
             })}
           </div>
 
-          {/* Pagination */}
           <div className="flex justify-between mt-8 gap-4">
             <button
               onClick={goToPrev}
@@ -1021,12 +1142,14 @@ Tafsir context: ${cleanTafsirText}`;
             >
               ← Previous surah
             </button>
+
             <button
               onClick={() => navigate("/quran")}
               className="bg-green-50 border border-green-100 rounded-2xl py-3 px-6 text-sm font-medium text-green-700 hover:bg-green-100 transition-all"
             >
               All surahs
             </button>
+
             <button
               onClick={goToNext}
               disabled={Number(surahNumber) === 114}
@@ -1038,7 +1161,6 @@ Tafsir context: ${cleanTafsirText}`;
         </div>
       </div>
 
-      {/* Sidebar */}
       <div
         className={`fixed top-0 right-0 h-full w-full sm:w-96 bg-gray-50 border-l border-gray-200 shadow-2xl transform transition-transform duration-300 ease-in-out overflow-y-auto z-50 ${
           isSidebarOpen ? "translate-x-0" : "translate-x-full"
@@ -1069,11 +1191,13 @@ Tafsir context: ${cleanTafsirText}`;
               >
                 {selectedVerse.text_uthmani}
               </p>
+
               {showTransliteration && selectedVerse.transliterationText && (
                 <p className="text-sm text-gray-600 italic mb-3">
                   {selectedVerse.transliterationText}
                 </p>
               )}
+
               {showTranslation && (
                 <div
                   className="text-sm text-gray-600"
@@ -1111,22 +1235,22 @@ Tafsir context: ${cleanTafsirText}`;
                   </div>
                 </div>
 
-                {!!Object.keys(footnotes).length && (
+                {footnotes.length > 0 && (
                   <div>
                     <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
                       Footnotes
                     </h3>
                     <div className="space-y-3 min-h-[110px]">
-                      {Object.entries(footnotes).map(([footnoteId, text]) => (
+                      {footnotes.map((footnote) => (
                         <div
-                          key={footnoteId}
+                          key={footnote.id}
                           className="bg-white p-3 rounded-xl border border-gray-100 text-sm text-gray-700"
                         >
                           <p className="text-xs text-gray-400 mb-1">
-                            Footnote {footnoteId}
+                            Footnote {footnote.id}
                           </p>
                           <div
-                            dangerouslySetInnerHTML={renderHtml(String(text))}
+                            dangerouslySetInnerHTML={renderHtml(footnote.text)}
                           />
                         </div>
                       ))}

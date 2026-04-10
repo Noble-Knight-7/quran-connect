@@ -10,19 +10,20 @@ import Quran from "./pages/Quran";
 import SurahReader from "./pages/SurahReader";
 
 function App() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
 
-  // Not logged in — show login page
+  if (loading) return null;
   if (!user) return <Login />;
 
-  // Logged in — show the full app with navigation
   return (
-    <BrowserRouter>
+    <BrowserRouter
+      future={{
+        v7_startTransition: true,
+        v7_relativeSplatPath: true,
+      }}
+    >
       <div className="min-h-screen bg-green-50">
-        {/* Navbar appears on every page */}
         <Navbar />
-
-        {/* Routes — each path loads a different page component */}
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/dashboard" element={<Dashboard />} />

@@ -3,6 +3,14 @@ import { useAuth } from "../AuthContext";
 import { db } from "../firebase";
 import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 
+function getLocalDateParts(date = new Date()) {
+  return {
+    year: String(date.getFullYear()),
+    month: String(date.getMonth() + 1).padStart(2, "0"),
+    day: String(date.getDate()).padStart(2, "0"),
+  };
+}
+
 function Activity() {
   const { user } = useAuth();
   const [readData, setReadData] = useState({});
@@ -11,32 +19,42 @@ function Activity() {
 
   useEffect(() => {
     const loadHistory = async () => {
-      const historyRef = collection(db, "users", user.uid, "history");
-      const snapshot = await getDocs(historyRef);
-      const userDoc = await getDoc(doc(db, "users", user.uid));
+      try {
+        const historyRef = collection(db, "users", user.uid, "history");
+        const snapshot = await getDocs(historyRef);
+        const userDoc = await getDoc(doc(db, "users", user.uid));
 
-      const dataMap = {};
-      let monthCount = 0;
-      const currentMonth = new Date().toISOString().split("-")[1];
+        const dataMap = {};
+        let monthCount = 0;
+        const { year: currentYear, month: currentMonth } = getLocalDateParts();
 
-      snapshot.forEach((doc) => {
-        const date = doc.id;
-        const count = doc.data().count || 1;
-        dataMap[date] = count;
-        if (date.split("-")[1] === currentMonth) monthCount += count;
-      });
+        snapshot.forEach((historyDoc) => {
+          const date = historyDoc.id;
+          const count = historyDoc.data().count || 1;
+          dataMap[date] = count;
 
-      setReadData(dataMap);
-      setStats({
-        streak: userDoc.exists() ? userDoc.data().streak || 0 : 0,
-        thisMonth: monthCount,
-      });
-      setLoading(false);
+          const [entryYear, entryMonth] = String(date).split("-");
+
+          if (entryYear === currentYear && entryMonth === currentMonth) {
+            monthCount += count;
+          }
+        });
+
+        setReadData(dataMap);
+        setStats({
+          streak: userDoc.exists() ? userDoc.data().streak || 0 : 0,
+          thisMonth: monthCount,
+        });
+      } catch (error) {
+        console.error("Activity load error:", error);
+      } finally {
+        setLoading(false);
+      }
     };
+
     loadHistory();
   }, [user.uid]);
 
-  // Evolutionized Intensity Logic
   const getIntensityColor = (dateString) => {
     if (!dateString || !readData[dateString]) return "bg-gray-50 text-gray-300";
     const count = readData[dateString];
@@ -47,7 +65,6 @@ function Activity() {
     return "bg-green-300 text-green-900";
   };
 
-  // Helper to generate a full month grid
   const getMonthGrid = (monthOffset = 0) => {
     const targetDate = new Date();
     targetDate.setMonth(targetDate.getMonth() - monthOffset);
@@ -60,13 +77,13 @@ function Activity() {
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
     const grid = [];
-    // Padding for start of month
     for (let i = 0; i < firstDay; i++) grid.push(null);
-    // Real days
+
     for (let i = 1; i <= daysInMonth; i++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(i).padStart(2, "0")}`;
       grid.push({ dayNum: i, date: dateStr });
     }
+
     return { name: monthName, year, grid };
   };
 
@@ -79,7 +96,6 @@ function Activity() {
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10 pb-32 md:pb-10">
-      {/* Header */}
       <div className="mb-10">
         <h1 className="text-3xl font-black text-green-900 tracking-tight">
           Activity
@@ -89,7 +105,6 @@ function Activity() {
         </p>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex items-center gap-5">
           <div className="w-14 h-14 bg-green-50 rounded-2xl flex items-center justify-center text-3xl">
@@ -104,6 +119,7 @@ function Activity() {
             </p>
           </div>
         </div>
+
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex items-center gap-5">
           <div className="w-14 h-14 bg-orange-50 rounded-2xl flex items-center justify-center text-3xl">
             🔥
@@ -115,6 +131,7 @@ function Activity() {
             </p>
           </div>
         </div>
+
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100 flex items-center gap-5">
           <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center text-3xl">
             📅
@@ -130,7 +147,6 @@ function Activity() {
         </div>
       </div>
 
-      {/* Consistency Maps Section */}
       <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100 mb-10">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10">
           <h2 className="text-xl font-black text-gray-800 tracking-tight">
@@ -148,7 +164,6 @@ function Activity() {
           </div>
         </div>
 
-        {/* Multi-Month Calendar Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
           {[0, 1, 2].map((offset) => {
             const { name, year, grid } = getMonthGrid(offset);
@@ -184,7 +199,6 @@ function Activity() {
         </div>
       </div>
 
-      {/* Activity List */}
       <div className="bg-white rounded-3xl p-8 shadow-sm border border-gray-100">
         <h2 className="text-xl font-black text-gray-800 tracking-tight mb-6">
           Activity Stream
@@ -200,10 +214,13 @@ function Activity() {
               >
                 <div>
                   <p className="text-sm font-black text-gray-800">
-                    {new Date(date).toLocaleDateString(undefined, {
-                      month: "short",
-                      day: "numeric",
-                    })}
+                    {new Date(`${date}T00:00:00`).toLocaleDateString(
+                      undefined,
+                      {
+                        month: "short",
+                        day: "numeric",
+                      },
+                    )}
                   </p>
                   <p className="text-[10px] font-bold text-green-600 uppercase tracking-widest">
                     Completed
