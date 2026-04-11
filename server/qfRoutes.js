@@ -181,8 +181,6 @@ router.get("/reading-session", requireUid, async (req, res) => {
 
     const payload = response.data || {};
 
-    console.log("QF RAW RESPONSE:", payload);
-
     if (!payload || !payload.data || payload.data.length === 0) {
       return res.json({
         success: true,
@@ -207,6 +205,116 @@ router.get("/reading-session", requireUid, async (req, res) => {
     return res.status(error?.response?.status || 500).json({
       success: false,
       message: "Could not fetch reading session.",
+      details: error?.response?.data || null,
+    });
+  }
+});
+
+router.get("/streak/current", requireUid, async (req, res) => {
+  try {
+    const timezone = req.header("x-timezone") || "UTC";
+
+    const response = await qfRequest(req.uid, {
+      method: "GET",
+      url: `${getUserApiBase()}/streaks/current-days`,
+      params: {
+        type: "QURAN",
+      },
+      headers: {
+        "x-timezone": timezone,
+      },
+    });
+
+    return res.json(response.data);
+  } catch (error) {
+    console.error(
+      "QF current streak error:",
+      error?.response?.data || error.message,
+    );
+
+    return res.status(error?.response?.status || 500).json({
+      success: false,
+      message: "Could not fetch current streak.",
+      details: error?.response?.data || null,
+    });
+  }
+});
+
+router.get("/activity-days", requireUid, async (req, res) => {
+  try {
+    const timezone = req.header("x-timezone") || "UTC";
+    const { from, to, first = 100, after } = req.query;
+
+    const response = await qfRequest(req.uid, {
+      method: "GET",
+      url: `${getUserApiBase()}/activity-days`,
+      params: {
+        type: "QURAN",
+        ...(from ? { from } : {}),
+        ...(to ? { to } : {}),
+        ...(first ? { first } : {}),
+        ...(after ? { after } : {}),
+      },
+      headers: {
+        "x-timezone": timezone,
+      },
+    });
+
+    return res.json(response.data);
+  } catch (error) {
+    console.error(
+      "QF activity days fetch error:",
+      error?.response?.data || error.message,
+    );
+
+    return res.status(error?.response?.status || 500).json({
+      success: false,
+      message: "Could not fetch activity days.",
+      details: error?.response?.data || null,
+    });
+  }
+});
+
+router.post("/activity-day", requireUid, async (req, res) => {
+  try {
+    const timezone = req.header("x-timezone") || "UTC";
+    const { date, seconds, ranges, mushafId = 4 } = req.body || {};
+
+    if (
+      typeof seconds !== "number" &&
+      (!Array.isArray(ranges) || ranges.length === 0)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Provide seconds or ranges.",
+      });
+    }
+
+    const response = await qfRequest(req.uid, {
+      method: "POST",
+      url: `${getUserApiBase()}/activity-days`,
+      headers: {
+        "x-timezone": timezone,
+      },
+      data: {
+        type: "QURAN",
+        mushafId,
+        ...(date ? { date } : {}),
+        ...(typeof seconds === "number" ? { seconds } : {}),
+        ...(Array.isArray(ranges) ? { ranges } : {}),
+      },
+    });
+
+    return res.json(response.data);
+  } catch (error) {
+    console.error(
+      "QF activity day save error:",
+      error?.response?.data || error.message,
+    );
+
+    return res.status(error?.response?.status || 500).json({
+      success: false,
+      message: "Could not save activity day.",
       details: error?.response?.data || null,
     });
   }

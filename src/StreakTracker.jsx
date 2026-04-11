@@ -343,15 +343,15 @@ function StreakTracker({ userId }) {
 
   if (loading) {
     return (
-      <div className="bg-white rounded-3xl p-6 md:p-8 shadow-sm border border-gray-100 w-full">
-        <p className="text-gray-400 text-center">Loading your streak...</p>
+      <div className="rounded-2xl p-5 sm:p-6 md:p-8 shadow-md w-full border bg-white border-gray-100 min-h-[560px] sm:min-h-[620px] xl:h-[740px] flex items-center justify-center">
+        <p className="text-gray-400 animate-pulse">Loading your streak...</p>
       </div>
     );
   }
 
   return (
     <div
-      className={`rounded-3xl p-6 md:p-8 shadow-sm w-full border transition-all flex flex-col min-h-[720px] xl:h-[740px] ${
+      className={`rounded-2xl p-5 sm:p-6 md:p-8 shadow-md w-full border transition-all flex flex-col min-h-[560px] sm:min-h-[620px] xl:h-[740px] ${
         isAtRisk ? "bg-orange-50 border-orange-200" : "bg-white border-gray-100"
       }`}
     >
@@ -428,7 +428,7 @@ function StreakTracker({ userId }) {
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-y-auto rounded-2xl border border-gray-100 bg-gray-50/70 p-2 mb-4">
+      <div className="h-[260px] overflow-y-auto rounded-2xl border border-gray-100 bg-gray-50/70 p-2 mb-4">
         {filteredSurahs.length > 0 ? (
           <div className="space-y-1">
             {filteredSurahs.map((surah) => (

@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../AuthContext";
+import { useQuranFoundation } from "../context/QuranFoundationContext";
 
 const API_BASE = "https://api.quran.com/api/v4";
 const DEFAULT_RECITATION_ID = 7;
@@ -38,7 +39,6 @@ const getApiBaseUrl = () => {
 
   return "http://localhost:5000";
 };
-
 const API_BASE_URL = getApiBaseUrl();
 
 const FALLBACK_TRANSLATIONS = [
@@ -241,10 +241,15 @@ function SurahReader() {
   const surahQueueIndexRef = useRef(0);
   const tafsirCacheRef = useRef(new Map());
   const aiReflectionCacheRef = useRef(new Map());
+  const verseRefs = useRef({});
 
   const [reflectionSaved, setReflectionSaved] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [finishingSurah, setFinishingSurah] = useState(false);
+  const { saveReadingSession, connected } = useQuranFoundation();
+  const [savedSpotVerseKey, setSavedSpotVerseKey] = useState(null);
+  const [savingSpotVerseKey, setSavingSpotVerseKey] = useState(null);
+
   const handleReadAgain = () => {
     setIsFinished(false);
     stopSurahPlayback();
@@ -906,16 +911,58 @@ function SurahReader() {
     setSelectedVerse(matchedVerse);
     setIsSidebarOpen(true);
     setReflectionText("");
+
+    requestAnimationFrame(() => {
+      const target = verseRefs.current[openVerseKey];
+      if (target) {
+        target.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }
+    });
   }, [location.state?.openVerseKey, verses]);
 
   useEffect(() => {
-    if (!selectedVerse || !location.state?.openVerseKey) return;
+    const resumeVerseKey = location.state?.resumeVerseKey;
+    if (!resumeVerseKey || !verses.length) return;
+
+    const matchedVerse = verses.find(
+      (verse) => verse.verse_key === resumeVerseKey,
+    );
+
+    if (!matchedVerse) return;
+
+    setSelectedVerse(matchedVerse);
+    setIsSidebarOpen(false);
+    setReflectionText("");
+    setReflectionSaved(false);
+
+    requestAnimationFrame(() => {
+      const target = verseRefs.current[resumeVerseKey];
+      if (target) {
+        target.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }
+    });
+  }, [location.state?.resumeVerseKey, verses]);
+
+  useEffect(() => {
+    if (
+      !selectedVerse ||
+      (!location.state?.openVerseKey && !location.state?.resumeVerseKey)
+    ) {
+      return;
+    }
 
     navigate(location.pathname, { replace: true, state: {} });
   }, [
     selectedVerse,
     location.pathname,
     location.state?.openVerseKey,
+    location.state?.resumeVerseKey,
     navigate,
   ]);
 
@@ -924,6 +971,28 @@ function SurahReader() {
     setIsSidebarOpen(true);
     setReflectionText("");
     setReflectionSaved(false);
+  };
+
+  const handleSaveSpot = async (e, verse) => {
+    e.stopPropagation();
+
+    if (!connected) return;
+
+    try {
+      setSavingSpotVerseKey(verse.verse_key);
+
+      await saveReadingSession({
+        chapterNumber: Number(surahNumber),
+        verseNumber: verse.verse_number,
+      });
+
+      setSavedSpotVerseKey(verse.verse_key);
+      console.log("QF reading session saved");
+    } catch (error) {
+      console.error("Failed to save reading session:", error);
+    } finally {
+      setSavingSpotVerseKey(null);
+    }
   };
 
   const handleSaveReflection = async () => {
@@ -1154,6 +1223,9 @@ function SurahReader() {
               return (
                 <div
                   key={verse.verse_key}
+                  ref={(el) => {
+                    if (el) verseRefs.current[verse.verse_key] = el;
+                  }}
                   onClick={() => handleVerseClick(verse)}
                   className={`bg-white rounded-2xl p-6 shadow-sm transition-all cursor-pointer border-2 ${
                     isCurrentSurahVerse
@@ -1187,6 +1259,22 @@ function SurahReader() {
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap justify-end">
+                      <button
+                        onClick={(e) => handleSaveSpot(e, verse)}
+                        disabled={savingSpotVerseKey === verse.verse_key}
+                        className={`text-xs px-3 py-1 rounded-full transition-all ${
+                          savedSpotVerseKey === verse.verse_key
+                            ? "bg-blue-600 text-white"
+                            : "bg-blue-50 text-blue-700 hover:bg-blue-100"
+                        } disabled:opacity-60 disabled:cursor-not-allowed`}
+                      >
+                        {savingSpotVerseKey === verse.verse_key
+                          ? "Saving..."
+                          : savedSpotVerseKey === verse.verse_key
+                            ? "Saved spot"
+                            : "Save spot"}
+                      </button>
+
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

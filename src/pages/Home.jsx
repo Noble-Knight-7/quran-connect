@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import DailyReconnectCard from "../components/DailyReconnectCard";
 import DailyQuizCard from "../components/DailyQuizCard";
 import QuranFoundationConnectCard from "../components/QuranFoundationConnectCard";
+import { useQuranFoundation } from "../context/QuranFoundationContext";
 
 const getNestedText = (value) => {
   if (typeof value === "string") return value;
@@ -16,43 +17,17 @@ const getNestedText = (value) => {
   return "";
 };
 
-const stripHtml = (value = "") =>
-  String(value)
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-async function fetchVerseTranslation(
-  chapterNumber,
-  verseNumber,
-  translationId = 131,
-) {
-  const res = await fetch(
-    `https://api.quran.com/api/v4/quran/translations/${translationId}?chapter_number=${chapterNumber}`,
-  );
-  if (!res.ok) {
-    throw new Error(`Failed loading translation map: ${res.status}`);
-  }
-
-  const data = await res.json();
-  const verseKey = `${chapterNumber}:${verseNumber}`;
-  const match = (data.translations || []).find(
-    (item) => item.verse_key === verseKey,
-  );
-  return stripHtml(match?.text || "");
-}
-
 function Home() {
   const { user } = useAuth();
+  const { connected, latestReadingSession } = useQuranFoundation();
   const [verse, setVerse] = useState(null);
   const [loading, setLoading] = useState(true);
   const [wordItems, setWordItems] = useState([]);
-  const [showTranslation, setShowTranslation] = useState(true);
-  const [showTransliteration, setShowTransliteration] = useState(true);
+  const [continueReadingSurahName, setContinueReadingSurahName] = useState("");
   const navigate = useNavigate();
 
   useEffect(() => {
-    const CACHE_KEY = "home_verse_of_the_day_v4";
+    const CACHE_KEY = "home_verse_of_the_day_v5";
     const SIX_HOURS = 6 * 60 * 60 * 1000;
 
     const surahVerseCounts = {
@@ -183,13 +158,11 @@ function Home() {
       words.map((word) => ({
         arabic: word.text_uthmani || "",
         transliteration: getNestedText(word?.transliteration),
-        translation: getNestedText(word?.translation),
       }));
 
     const loadVerse = async () => {
       try {
         const cachedRaw = localStorage.getItem(CACHE_KEY);
-
         if (cachedRaw) {
           const cached = JSON.parse(cachedRaw);
           if (Date.now() - cached.savedAt < SIX_HOURS) {
@@ -199,55 +172,22 @@ function Home() {
             return;
           }
         }
-
         const { surahNumber, verseNumber } = getRandomVerseRef();
-
         const res = await fetch(
-          `https://api.quran.com/api/v4/verses/by_key/${surahNumber}:${verseNumber}?language=en&translations=131&fields=text_uthmani,verse_key,juz_number,hizb_number,page_number&translation_fields=resource_name,text&word_fields=text_uthmani,translation,transliteration&words=true`,
+          `https://api.quran.com/api/v4/verses/by_key/${surahNumber}:${verseNumber}?language=en&fields=text_uthmani,verse_key,juz_number,hizb_number,page_number&word_fields=text_uthmani,transliteration&words=true`,
         );
-        if (!res.ok) {
-          throw new Error(`Failed to load verse: ${res.status}`);
-        }
-
+        if (!res.ok) throw new Error(`Failed to load verse: ${res.status}`);
         const data = await res.json();
         const verseData = data?.verse;
-
-        if (!verseData) {
-          throw new Error("Verse data malformed");
-        }
-
-        let fullTranslation = stripHtml(
-          verseData.translations?.[0]?.text || "",
-        );
-
-        if (!fullTranslation) {
-          try {
-            fullTranslation = await fetchVerseTranslation(
-              surahNumber,
-              verseNumber,
-              131,
-            );
-          } catch (translationError) {
-            console.error(
-              "Fallback translation fetch failed:",
-              translationError,
-            );
-          }
-        }
-
         const normalizedVerse = {
           arabic: verseData.text_uthmani || "",
-          translation: fullTranslation,
           surahName: verseData.chapter?.name_simple || `Surah ${surahNumber}`,
           surahNumber,
           verseNumber,
         };
-
         const normalizedWords = normalizeWords(verseData.words || []);
-
         setVerse(normalizedVerse);
         setWordItems(normalizedWords);
-
         localStorage.setItem(
           CACHE_KEY,
           JSON.stringify({
@@ -257,127 +197,177 @@ function Home() {
           }),
         );
       } catch (error) {
-        console.error("Failed to load verse of the day:", error);
-        setVerse(null);
-        setWordItems([]);
+        console.error("Failed to load verse:", error);
       } finally {
         setLoading(false);
       }
     };
-
     loadVerse();
   }, []);
 
-  return (
-    <div className="flex flex-col items-center gap-6 py-10 px-4 max-w-7xl mx-auto">
-      <div className="w-full flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-2">
-        <div className="text-left">
-          <h1 className="text-3xl font-bold text-green-800">
-            Assalamu Alaikum, {user?.displayName || "Friend"}
-          </h1>
-          <p className="text-gray-500 font-medium text-sm">
-            Welcome back to your Quran journey.
-          </p>
-        </div>
+  useEffect(() => {
+    let cancelled = false;
+    async function loadContinueReadingMeta() {
+      if (!connected || !latestReadingSession?.chapterNumber) {
+        setContinueReadingSurahName("");
+        return;
+      }
+      try {
+        const res = await fetch(
+          `https://api.quran.com/api/v4/chapters/${latestReadingSession.chapterNumber}?language=en`,
+        );
+        const data = await res.json();
+        if (!cancelled)
+          setContinueReadingSurahName(
+            data?.chapter?.name_simple ||
+              `Surah ${latestReadingSession.chapterNumber}`,
+          );
+      } catch (error) {
+        if (!cancelled)
+          setContinueReadingSurahName(
+            `Surah ${latestReadingSession.chapterNumber}`,
+          );
+      }
+    }
+    loadContinueReadingMeta();
+    return () => {
+      cancelled = true;
+    };
+  }, [connected, latestReadingSession]);
 
-        <div className="shrink-0 md:ml-6 md:self-start">
-          <QuranFoundationConnectCard />
+  return (
+    <div className="flex flex-col items-center gap-5 sm:gap-6 py-6 sm:py-8 md:py-10 px-4 sm:px-5 max-w-7xl mx-auto">
+      {/* Header Section */}
+      <div className="w-full flex flex-col gap-4">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+          <div className="text-left min-w-0">
+            <h1 className="text-3xl sm:text-4xl md:text-3xl lg:text-4xl font-bold text-green-800 leading-tight break-words">
+              Assalamu Alaikum, {user?.displayName || "Friend"}
+            </h1>
+            <p className="text-gray-500 font-medium text-sm sm:text-base mt-1">
+              Welcome back to your Quran journey.
+            </p>
+          </div>
+          <div className="w-full md:w-auto md:max-w-[360px] shrink-0">
+            <QuranFoundationConnectCard />
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 w-full items-stretch">
-        <div className="xl:col-span-5 flex">
-          <div className="w-full flex">
-            <StreakTracker userId={user.uid} />
+      {/* 1. Continue Reading or Empty State */}
+      {connected && latestReadingSession?.chapterNumber ? (
+        <div className="bg-white rounded-2xl px-5 py-4 shadow-md border border-green-100 w-full">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-green-600 mb-1">
+                Continue reading
+              </p>
+              <h2 className="text-lg sm:text-xl font-bold text-green-900">
+                {continueReadingSurahName}
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Resume from Ayah {latestReadingSession.verseNumber || 1}
+              </p>
+            </div>
+            <button
+              onClick={() =>
+                navigate(`/quran/${latestReadingSession.chapterNumber}`, {
+                  state: {
+                    resumeVerseKey: `${latestReadingSession.chapterNumber}:${latestReadingSession.verseNumber}`,
+                  },
+                })
+              }
+              className="px-5 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 text-sm font-bold transition-colors shadow-sm"
+            >
+              Resume now
+            </button>
+          </div>
+        </div>
+      ) : (
+        // <div className="bg-white rounded-2xl p-6 sm:p-8 shadow-md border border-green-50 w-full relative overflow-hidden group transition-all hover:shadow-lg">
+        <div className="bg-white rounded-2xl px-5 py-4 shadow-md border border-green-100 w-full">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-green-600 mb-1">
+                Continue reading
+              </p>
+              <h2 className="text-lg sm:text-xl font-bold text-green-900">
+                Begin your Quran journey
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Start from Surah Al-Fatiha
+              </p>
+            </div>
+
+            <button
+              onClick={() => navigate("/quran/1")}
+              className="px-5 py-2.5 rounded-xl bg-green-600 text-white hover:bg-green-700 text-sm font-bold transition-colors shadow-sm whitespace-nowrap"
+            >
+              Start now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Grid */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 sm:gap-5 w-full items-stretch">
+        <div className="order-1 xl:col-span-5 flex">
+          <div className="w-full h-full shadow-md rounded-2xl overflow-hidden">
+            {user?.uid ? (
+              <StreakTracker userId={user.uid} />
+            ) : (
+              <div className="bg-white rounded-2xl p-8 shadow-md border border-gray-100 w-full h-full min-h-[560px] animate-pulse flex items-center justify-center">
+                <div className="text-gray-300">Loading profile...</div>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="xl:col-span-7 flex">
-          <div className="bg-white rounded-2xl p-6 md:p-8 shadow-md w-full flex flex-col justify-between border border-transparent">
+        <div className="order-2 xl:col-span-7 flex flex-col gap-4">
+          <div className="bg-white rounded-2xl p-5 sm:p-6 md:p-8 shadow-md w-full flex flex-col justify-between border border-transparent h-full min-h-[520px]">
             <div>
-              <h2 className="text-green-700 text-lg font-semibold mb-4">
+              <h2 className="text-green-700 text-base sm:text-lg font-semibold mb-4">
                 Verse of the day
               </h2>
-
-              <div className="flex flex-wrap gap-2 mb-5">
-                <button
-                  onClick={() => setShowTranslation((prev) => !prev)}
-                  className={`text-xs px-3 py-1.5 rounded-xl transition-all font-medium ${
-                    showTranslation
-                      ? "bg-green-100 text-green-700"
-                      : "bg-gray-100 text-gray-500"
-                  }`}
-                >
-                  {showTranslation ? "Translation on" : "Translation off"}
-                </button>
-
-                <button
-                  onClick={() => setShowTransliteration((prev) => !prev)}
-                  className={`text-xs px-3 py-1.5 rounded-xl transition-all font-medium ${
-                    showTransliteration
-                      ? "bg-sky-100 text-sky-700"
-                      : "bg-gray-100 text-gray-500"
-                  }`}
-                >
-                  {showTransliteration
-                    ? "Transliteration on"
-                    : "Transliteration off"}
-                </button>
-              </div>
-
               {loading ? (
-                <p className="text-gray-400 text-center py-10">
-                  Loading verse...
-                </p>
-              ) : verse ? (
-                <>
-                  <p
-                    className="text-3xl md:text-4xl text-right text-green-900 leading-loose mb-6"
-                    dir="rtl"
-                    style={{ fontFamily: "serif", lineHeight: "2.2" }}
-                  >
-                    {verse.arabic}
-                  </p>
-
-                  {showTransliteration && wordItems.length > 0 && (
-                    <div className="border-t border-sky-50 pt-4 mb-4">
-                      <p className="text-xs uppercase tracking-wide text-sky-600 mb-2">
-                        Transliteration
-                      </p>
-                      <p className="text-sm italic text-gray-600 leading-relaxed">
-                        {wordItems
-                          .map((word) => word.transliteration)
-                          .filter(Boolean)
-                          .join(" ")}
-                      </p>
-                    </div>
-                  )}
-
-                  {showTranslation && verse.translation && (
-                    <p className="text-gray-600 text-lg italic mb-3">
-                      "{verse.translation}"
-                    </p>
-                  )}
-
-                  <p className="text-md text-green-600 font-medium mb-5">
-                    — Surah {verse.surahName}, Verse {verse.verseNumber}
-                  </p>
-                </>
+                <p className="text-gray-400 text-center py-10">Loading...</p>
               ) : (
-                <p className="text-gray-400 text-center">
-                  Could not load verse.
-                </p>
+                verse && (
+                  <>
+                    <p
+                      className="text-[1.8rem] sm:text-[2.2rem] lg:text-[2.5rem] text-right text-green-900 leading-[2] mb-5"
+                      dir="rtl"
+                      style={{ fontFamily: "serif" }}
+                    >
+                      {verse.arabic}
+                    </p>
+                    {wordItems.length > 0 && (
+                      <div className="border-t border-sky-50 pt-4 mb-4">
+                        <p className="text-xs uppercase tracking-wide text-sky-600 mb-2">
+                          Transliteration
+                        </p>
+                        <p className="text-sm italic text-gray-600 leading-relaxed">
+                          {wordItems
+                            .map((w) => w.transliteration)
+                            .filter(Boolean)
+                            .join(" ")}
+                        </p>
+                      </div>
+                    )}
+                    <p className="text-sm sm:text-md text-green-600 font-medium">
+                      — {verse.surahName}, Verse {verse.verseNumber}
+                    </p>
+                  </>
+                )
               )}
             </div>
-
             <div className="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <button
                 onClick={() => navigate(`/quran/${verse?.surahNumber}`)}
-                className="text-sm text-green-600 hover:text-green-800 font-medium transition-colors text-left"
+                className="text-sm text-green-600 hover:text-green-800 font-medium text-left"
               >
-                Read full Surah {verse?.surahName} →
+                Read full Surah →
               </button>
-
               <button
                 onClick={() =>
                   navigate(`/quran/${verse?.surahNumber}`, {
@@ -386,7 +376,7 @@ function Home() {
                     },
                   })
                 }
-                className="text-sm text-green-700 hover:text-green-900 font-semibold transition-colors text-left sm:text-right"
+                className="text-sm text-green-700 hover:text-green-900 font-semibold text-left sm:text-right"
               >
                 Reflect on this verse →
               </button>
@@ -395,11 +385,8 @@ function Home() {
         </div>
       </div>
 
-      <div className="w-full">
+      <div className="w-full flex flex-col gap-4">
         <DailyReconnectCard />
-      </div>
-
-      <div className="w-full">
         <DailyQuizCard />
       </div>
     </div>
