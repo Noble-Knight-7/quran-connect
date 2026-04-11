@@ -262,35 +262,6 @@ export function QuranFoundationProvider({ children }) {
     [connected, user],
   );
 
-  const disconnect = useCallback(async () => {
-    if (!user?.uid) return;
-
-    const response = await fetch(`${API_BASE_URL}/api/qf/auth/disconnect`, {
-      method: "POST",
-      headers: {
-        "x-user-id": user.uid,
-      },
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(
-        data?.message || "Failed to disconnect Quran Foundation.",
-      );
-    }
-
-    setConnected(false);
-    setLatestReadingSession(null);
-
-    sessionStorage.removeItem("qf_state");
-    sessionStorage.removeItem("qf_code_verifier");
-    sessionStorage.removeItem("qf_nonce");
-    sessionStorage.removeItem("qf_redirect_uri");
-
-    return data;
-  }, [user]);
-
   const value = useMemo(
     () => ({
       connected,
@@ -300,7 +271,6 @@ export function QuranFoundationProvider({ children }) {
       finishConnectFlow,
       saveReadingSession,
       fetchLatestReadingSession,
-      disconnect,
     }),
     [
       connected,
@@ -310,90 +280,7 @@ export function QuranFoundationProvider({ children }) {
       finishConnectFlow,
       saveReadingSession,
       fetchLatestReadingSession,
-      disconnect,
     ],
-  );
-  const getUserTimezone = () =>
-    Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-
-  const fetchCurrentStreak = useCallback(async () => {
-    if (!user?.uid || !connected) return null;
-
-    const response = await fetch(`${API_BASE_URL}/api/qf/streak/current`, {
-      headers: {
-        "x-user-id": user.uid,
-        "x-timezone": getUserTimezone(),
-      },
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data?.message || "Failed to fetch current streak.");
-    }
-
-    return data;
-  }, [user, connected]);
-
-  const fetchActivityDays = useCallback(
-    async ({ from, to, first = 100, after } = {}) => {
-      if (!user?.uid || !connected) return null;
-
-      const params = new URLSearchParams();
-      if (from) params.set("from", from);
-      if (to) params.set("to", to);
-      if (first) params.set("first", String(first));
-      if (after) params.set("after", after);
-
-      const response = await fetch(
-        `${API_BASE_URL}/api/qf/activity-days?${params.toString()}`,
-        {
-          headers: {
-            "x-user-id": user.uid,
-            "x-timezone": getUserTimezone(),
-          },
-        },
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data?.message || "Failed to fetch activity days.");
-      }
-
-      return data;
-    },
-    [user, connected],
-  );
-
-  const saveActivityDay = useCallback(
-    async ({ date, seconds, ranges, mushafId = 4 }) => {
-      if (!user?.uid || !connected) return null;
-
-      const response = await fetch(`${API_BASE_URL}/api/qf/activity-day`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-user-id": user.uid,
-          "x-timezone": getUserTimezone(),
-        },
-        body: JSON.stringify({
-          date,
-          seconds,
-          ranges,
-          mushafId,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data?.message || "Failed to save activity day.");
-      }
-
-      return data;
-    },
-    [user, connected],
   );
 
   return (
