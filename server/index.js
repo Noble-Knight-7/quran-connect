@@ -1,12 +1,21 @@
+const path = require("path");
+require("dotenv").config({
+  path: path.join(__dirname, ".env"),
+  override: true,
+});
+
 const { getReconnectPlanForDate } = require("./reconnectPlan");
 const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
-const dotenv = require("dotenv");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { getDb } = require("./firebaseAdmin");
+const qfRoutes = require("./qfRoutes");
 
-dotenv.config();
+console.log("ENV CHECK", {
+  QF_CLIENT_ID_PRESENT: Boolean(process.env.QF_CLIENT_ID),
+  QF_CLIENT_SECRET_PRESENT: Boolean(process.env.QF_CLIENT_SECRET),
+});
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -59,6 +68,8 @@ app.use(
 );
 
 app.use(express.json());
+
+app.use("/api/qf", qfRoutes);
 
 app.get("/api/health", (req, res) => {
   try {

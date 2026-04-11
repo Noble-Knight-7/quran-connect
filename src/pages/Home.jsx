@@ -4,6 +4,7 @@ import StreakTracker from "../StreakTracker";
 import { useNavigate } from "react-router-dom";
 import DailyReconnectCard from "../components/DailyReconnectCard";
 import DailyQuizCard from "../components/DailyQuizCard";
+import QuranFoundationConnectCard from "../components/QuranFoundationConnectCard";
 
 const getNestedText = (value) => {
   if (typeof value === "string") return value;
@@ -269,10 +270,19 @@ function Home() {
 
   return (
     <div className="flex flex-col items-center gap-6 py-10 px-4 max-w-7xl mx-auto">
-      <div className="w-full text-left mb-2">
-        <h1 className="text-3xl font-bold text-green-800">
-          Assalamu Alaikum, {user?.displayName || "Shafiqul Alam"}
-        </h1>
+      <div className="w-full flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-2">
+        <div className="text-left">
+          <h1 className="text-3xl font-bold text-green-800">
+            Assalamu Alaikum, {user?.displayName || "Friend"}
+          </h1>
+          <p className="text-gray-500 font-medium text-sm">
+            Welcome back to your Quran journey.
+          </p>
+        </div>
+
+        <div className="shrink-0 md:ml-6 md:self-start">
+          <QuranFoundationConnectCard />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 w-full items-stretch">

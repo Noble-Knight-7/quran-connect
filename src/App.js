@@ -8,6 +8,7 @@ import Activity from "./pages/Activity";
 import Community from "./pages/Community";
 import Quran from "./pages/Quran";
 import SurahReader from "./pages/SurahReader";
+import QuranCallback from "./pages/QuranCallback";
 
 function App() {
   const { user, loading } = useAuth();
@@ -31,6 +32,7 @@ function App() {
           <Route path="/community" element={<Community />} />
           <Route path="/quran" element={<Quran />} />
           <Route path="/quran/:surahNumber" element={<SurahReader />} />
+          <Route path="/qf/callback" element={<QuranCallback />} />
         </Routes>
       </div>
     </BrowserRouter>
