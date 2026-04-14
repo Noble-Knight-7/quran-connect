@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "../AuthContext";
-import { useQuranFoundation } from "../context/QuranFoundationContext";
+import { db } from "../firebase";
+import { collection, getDocs, doc, getDoc } from "firebase/firestore";
 
 function getLocalDateParts(date = new Date()) {
   return {
@@ -10,152 +11,49 @@ function getLocalDateParts(date = new Date()) {
   };
 }
 
-function getLocalDateKey(date = new Date()) {
-  const { year, month, day } = getLocalDateParts(date);
-  return `${year}-${month}-${day}`;
-}
-
-function getMonthStart(date = new Date()) {
-  const { year, month } = getLocalDateParts(date);
-  return `${year}-${month}-01`;
-}
-
-function normalizeActivityDays(payload) {
-  const raw =
-    (Array.isArray(payload?.data) && payload.data) ||
-    (Array.isArray(payload?.activityDays) && payload.activityDays) ||
-    (Array.isArray(payload) && payload) ||
-    [];
-
-  return raw
-    .map((item) => {
-      const date =
-        item?.date ||
-        item?.activityDate ||
-        item?.day ||
-        item?.createdOn ||
-        null;
-
-      const ranges = Array.isArray(item?.ranges) ? item.ranges : [];
-      const seconds = Number(item?.seconds || 0);
-
-      const score = Math.max(
-        ranges.length,
-        seconds >= 900
-          ? 5
-          : seconds >= 600
-            ? 4
-            : seconds >= 300
-              ? 3
-              : seconds > 0
-                ? 1
-                : 0,
-      );
-
-      return {
-        date,
-        ranges,
-        seconds,
-        score,
-      };
-    })
-    .filter((item) => item.date);
-}
-
-function extractCurrentStreak(payload) {
-  if (typeof payload?.days === "number") return payload.days;
-
-  if (Array.isArray(payload?.data) && payload.data.length > 0) {
-    const first = payload.data[0];
-    if (typeof first?.days === "number") return first.days;
-    if (typeof first?.currentDays === "number") return first.currentDays;
-  }
-
-  if (typeof payload?.currentDays === "number") return payload.currentDays;
-
-  return 0;
-}
-
 function Activity() {
   const { user } = useAuth();
-  const { connected, fetchCurrentStreak, fetchActivityDays } =
-    useQuranFoundation();
-
   const [readData, setReadData] = useState({});
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ streak: 0, thisMonth: 0 });
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadQfActivity() {
-      if (!user?.uid || !connected) {
-        if (!cancelled) {
-          setReadData({});
-          setStats({ streak: 0, thisMonth: 0 });
-          setLoading(false);
-        }
-        return;
-      }
-
+    const loadHistory = async () => {
       try {
-        setLoading(true);
+        const historyRef = collection(db, "users", user.uid, "history");
+        const snapshot = await getDocs(historyRef);
+        const userDoc = await getDoc(doc(db, "users", user.uid));
 
-        const today = getLocalDateKey();
-        const threeMonthsAgo = new Date();
-        threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 2);
-        const from = getMonthStart(threeMonthsAgo);
-
-        const [streakPayload, activityPayload] = await Promise.all([
-          fetchCurrentStreak(),
-          fetchActivityDays({ from, to: today, first: 200 }),
-        ]);
-
-        if (cancelled) return;
-
-        const normalized = normalizeActivityDays(activityPayload);
         const dataMap = {};
         let monthCount = 0;
         const { year: currentYear, month: currentMonth } = getLocalDateParts();
 
-        normalized.forEach((item) => {
-          dataMap[item.date] = Math.max(1, item.score || 1);
+        snapshot.forEach((historyDoc) => {
+          const date = historyDoc.id;
+          const count = historyDoc.data().count || 1;
+          dataMap[date] = count;
 
-          const [entryYear, entryMonth] = String(item.date).split("-");
+          const [entryYear, entryMonth] = String(date).split("-");
+
           if (entryYear === currentYear && entryMonth === currentMonth) {
-            monthCount += 1;
+            monthCount += count;
           }
         });
 
         setReadData(dataMap);
         setStats({
-          streak: extractCurrentStreak(streakPayload),
+          streak: userDoc.exists() ? userDoc.data().streak || 0 : 0,
           thisMonth: monthCount,
         });
       } catch (error) {
         console.error("Activity load error:", error);
-        if (!cancelled) {
-          setReadData({});
-          setStats({ streak: 0, thisMonth: 0 });
-        }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        setLoading(false);
       }
-    }
-
-    loadQfActivity();
-
-    return () => {
-      cancelled = true;
     };
-  }, [user, connected, fetchCurrentStreak, fetchActivityDays]);
 
-  const sortedDates = useMemo(
-    () => Object.keys(readData).sort((a, b) => b.localeCompare(a)),
-    [readData],
-  );
+    loadHistory();
+  }, [user.uid]);
 
   const getIntensityColor = (dateString) => {
     if (!dateString || !readData[dateString]) return "bg-gray-50 text-gray-300";
@@ -189,13 +87,12 @@ function Activity() {
     return { name: monthName, year, grid };
   };
 
-  if (loading) {
+  if (loading)
     return (
       <div className="flex items-center justify-center h-screen text-gray-400 font-black animate-pulse uppercase tracking-widest">
         Loading Activity...
       </div>
     );
-  }
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-10 pb-32 md:pb-10">
@@ -204,7 +101,7 @@ function Activity() {
           Activity
         </h1>
         <p className="text-gray-500 font-medium text-sm">
-          Review your synced Quran Foundation consistency.
+          Review your consistency and session depth.
         </p>
       </div>
 
@@ -218,7 +115,7 @@ function Activity() {
               {Object.keys(readData).length}
             </p>
             <p className="text-gray-400 text-[10px] uppercase font-bold tracking-widest">
-              Total Active Days
+              Total Days
             </p>
           </div>
         </div>
@@ -307,29 +204,35 @@ function Activity() {
           Activity Stream
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {sortedDates.slice(0, 12).map((date) => (
-            <div
-              key={date}
-              className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 group hover:border-green-200 transition-all"
-            >
-              <div>
-                <p className="text-sm font-black text-gray-800">
-                  {new Date(`${date}T00:00:00`).toLocaleDateString(undefined, {
-                    month: "short",
-                    day: "numeric",
-                  })}
-                </p>
-                <p className="text-[10px] font-bold text-green-600 uppercase tracking-widest">
-                  Synced
-                </p>
-              </div>
+          {Object.keys(readData)
+            .sort((a, b) => b.localeCompare(a))
+            .slice(0, 12)
+            .map((date) => (
               <div
-                className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black shadow-sm ${getIntensityColor(date)}`}
+                key={date}
+                className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100 group hover:border-green-200 transition-all"
               >
-                {readData[date]}
+                <div>
+                  <p className="text-sm font-black text-gray-800">
+                    {new Date(`${date}T00:00:00`).toLocaleDateString(
+                      undefined,
+                      {
+                        month: "short",
+                        day: "numeric",
+                      },
+                    )}
+                  </p>
+                  <p className="text-[10px] font-bold text-green-600 uppercase tracking-widest">
+                    Completed
+                  </p>
+                </div>
+                <div
+                  className={`w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-black shadow-sm ${getIntensityColor(date)}`}
+                >
+                  {readData[date]}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
       </div>
     </div>
