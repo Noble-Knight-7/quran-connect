@@ -69,7 +69,9 @@ export function QuranFoundationProvider({ children }) {
   const [connected, setConnected] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(true);
   const [latestReadingSession, setLatestReadingSession] = useState(null);
+  const [bookmarks, setBookmarks] = useState([]);
 
+  // ── Status check ─────────────────────────────────────────────
   const fetchStatus = useCallback(async () => {
     if (!user?.uid) {
       setConnected(false);
@@ -94,6 +96,7 @@ export function QuranFoundationProvider({ children }) {
     }
   }, [user]);
 
+  // ── Reading session ───────────────────────────────────────────
   const fetchLatestReadingSession = useCallback(async () => {
     if (!user?.uid) return null;
 
@@ -115,6 +118,92 @@ export function QuranFoundationProvider({ children }) {
     }
   }, [user]);
 
+  // ── Bookmarks ─────────────────────────────────────────────────
+  const fetchBookmarks = useCallback(async () => {
+    if (!connected || !user?.uid) return [];
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/qf/bookmarks`, {
+        headers: {
+          "x-user-id": user.uid,
+        },
+      });
+
+      if (!response.ok) return [];
+
+      const data = await response.json();
+      const list = data?.data || [];
+      setBookmarks(list);
+      return list;
+    } catch (error) {
+      console.error("Failed to fetch bookmarks:", error);
+      return [];
+    }
+  }, [connected, user]);
+
+  const addBookmark = useCallback(
+    async (verseKey) => {
+      if (!connected || !user?.uid) return null;
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/qf/bookmarks`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": user.uid,
+          },
+          body: JSON.stringify({ verseKey }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) return null;
+
+        // Optimistically update local bookmark list
+        setBookmarks((prev) => {
+          const alreadyExists = prev.some((b) => b.verse_key === verseKey);
+          if (alreadyExists) return prev;
+          return [...prev, { verse_key: verseKey }];
+        });
+
+        return data;
+      } catch (error) {
+        console.error("Failed to add bookmark:", error);
+        return null;
+      }
+    },
+    [connected, user],
+  );
+
+  const removeBookmark = useCallback(
+    async (verseKey) => {
+      if (!connected || !user?.uid) return null;
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/qf/bookmarks/${encodeURIComponent(verseKey)}`,
+          {
+            method: "DELETE",
+            headers: {
+              "x-user-id": user.uid,
+            },
+          },
+        );
+
+        if (!response.ok) return null;
+
+        // Remove from local state
+        setBookmarks((prev) => prev.filter((b) => b.verse_key !== verseKey));
+
+        return true;
+      } catch (error) {
+        console.error("Failed to remove bookmark:", error);
+        return null;
+      }
+    },
+    [connected, user],
+  );
+
+  // ── Effects ───────────────────────────────────────────────────
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
@@ -122,11 +211,14 @@ export function QuranFoundationProvider({ children }) {
   useEffect(() => {
     if (connected) {
       fetchLatestReadingSession();
+      fetchBookmarks();
     } else {
       setLatestReadingSession(null);
+      setBookmarks([]);
     }
-  }, [connected, fetchLatestReadingSession]);
+  }, [connected, fetchLatestReadingSession, fetchBookmarks]);
 
+  // ── OAuth flow ────────────────────────────────────────────────
   const startConnectFlow = useCallback(async () => {
     if (!user?.uid || !CLIENT_ID) {
       alert("Missing user or REACT_APP_QF_CLIENT_ID");
@@ -148,7 +240,8 @@ export function QuranFoundationProvider({ children }) {
       response_type: "code",
       client_id: CLIENT_ID,
       redirect_uri: redirectUri,
-      scope: "openid offline_access user reading_session",
+      // ✅ Updated scope — now includes bookmark and streak
+      scope: "openid offline_access user reading_session bookmark streak",
       state,
       nonce,
       code_challenge: codeChallenge,
@@ -215,7 +308,7 @@ export function QuranFoundationProvider({ children }) {
       console.log("QF callback: marking connected");
       setConnected(true);
 
-      // Fire and forget. Do not block redirect.
+      // Fire and forget — do not block redirect
       fetchLatestReadingSession().catch((error) => {
         console.error("Post-connect reading session fetch failed:", error);
       });
@@ -228,6 +321,7 @@ export function QuranFoundationProvider({ children }) {
     [user, fetchLatestReadingSession],
   );
 
+  // ── Save reading session ──────────────────────────────────────
   const saveReadingSession = useCallback(
     async ({ chapterNumber, verseNumber }) => {
       if (!connected || !user?.uid) return null;
@@ -262,24 +356,33 @@ export function QuranFoundationProvider({ children }) {
     [connected, user],
   );
 
+  // ── Context value ─────────────────────────────────────────────
   const value = useMemo(
     () => ({
       connected,
       checkingStatus,
       latestReadingSession,
+      bookmarks,
       startConnectFlow,
       finishConnectFlow,
       saveReadingSession,
       fetchLatestReadingSession,
+      fetchBookmarks,
+      addBookmark,
+      removeBookmark,
     }),
     [
       connected,
       checkingStatus,
       latestReadingSession,
+      bookmarks,
       startConnectFlow,
       finishConnectFlow,
       saveReadingSession,
       fetchLatestReadingSession,
+      fetchBookmarks,
+      addBookmark,
+      removeBookmark,
     ],
   );
 

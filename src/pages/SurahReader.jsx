@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { useQuranFoundation } from "../context/QuranFoundationContext";
 import {
   collection,
   addDoc,
@@ -11,12 +12,12 @@ import {
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { useAuth } from "../AuthContext";
-import { useQuranFoundation } from "../context/QuranFoundationContext";
 
 const API_BASE = "https://api.quran.com/api/v4";
 const DEFAULT_RECITATION_ID = 7;
 const DEFAULT_TRANSLATION_ID = 20;
 const DEFAULT_TAFSIR_ID = 169;
+
 const getApiBaseUrl = () => {
   const envUrl = process.env.REACT_APP_API_BASE_URL?.trim();
 
@@ -246,9 +247,64 @@ function SurahReader() {
   const [reflectionSaved, setReflectionSaved] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [finishingSurah, setFinishingSurah] = useState(false);
-  const { saveReadingSession, connected } = useQuranFoundation();
+  const { saveReadingSession, connected, addBookmark } = useQuranFoundation();
   const [savedSpotVerseKey, setSavedSpotVerseKey] = useState(null);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+
+  // Bookmark state
+  const [bookmarkedVerseKeys, setBookmarkedVerseKeys] = useState(new Set());
+  const [bookmarkingVerseKey, setBookmarkingVerseKey] = useState(null);
   const [savingSpotVerseKey, setSavingSpotVerseKey] = useState(null);
+
+  // ── Search handler ──────────────────────────────────────────
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+    setSearching(true);
+    setSearchResults([]);
+    try {
+      const res = await fetch(
+        `https://api.qurancdn.com/api/qdc/search?q=${encodeURIComponent(searchQuery)}&size=10&page=1`,
+      );
+      const data = await res.json();
+      setSearchResults(data?.search?.results || []);
+    } catch (err) {
+      console.error("Search failed:", err);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleSearchResultClick = (result) => {
+    const [chapter] = result.verse_key.split(":");
+    navigate(`/quran/${chapter}`, {
+      state: { openVerseKey: result.verse_key },
+    });
+    setShowSearch(false);
+    setSearchQuery("");
+    setSearchResults([]);
+  };
+
+  // ── Bookmark handler ─────────────────────────────────────────
+  const handleBookmark = async (e, verse) => {
+    e.stopPropagation();
+    if (!connected || !addBookmark) return;
+    const verseKey = verse.verse_key;
+    setBookmarkingVerseKey(verseKey);
+    try {
+      await addBookmark(verseKey);
+      setBookmarkedVerseKeys((prev) => new Set([...prev, verseKey]));
+    } catch (err) {
+      console.error("Bookmark failed:", err);
+    } finally {
+      setBookmarkingVerseKey(null);
+    }
+  };
 
   const handleReadAgain = () => {
     setIsFinished(false);
@@ -1150,6 +1206,76 @@ function SurahReader() {
             </div>
           </div>
 
+          {/* ── Search Bar ─────────────────────────────────────────── */}
+          <div className="mb-4">
+            <button
+              onClick={() => {
+                setShowSearch((p) => !p);
+                setSearchResults([]);
+                setSearchQuery("");
+              }}
+              className="flex items-center gap-2 text-sm font-semibold text-green-700 bg-green-50 hover:bg-green-100 px-4 py-2 rounded-xl transition-all border border-green-100"
+            >
+              🔍 {showSearch ? "Close search" : "Search Quran"}
+            </button>
+
+            {showSearch && (
+              <div className="mt-3 bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+                <form onSubmit={handleSearch} className="flex gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search Quran... (e.g. patience, mercy, light)"
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:border-green-400 transition-all"
+                    autoFocus
+                  />
+                  <button
+                    type="submit"
+                    disabled={searching}
+                    className="px-5 py-2.5 bg-green-600 text-white rounded-xl font-bold text-sm hover:bg-green-700 disabled:opacity-60 transition-all"
+                  >
+                    {searching ? "..." : "Search"}
+                  </button>
+                </form>
+
+                {searchResults.length > 0 && (
+                  <div className="space-y-2 max-h-72 overflow-y-auto">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">
+                      {searchResults.length} results
+                    </p>
+                    {searchResults.map((result, i) => (
+                      <button
+                        key={i}
+                        onClick={() => handleSearchResultClick(result)}
+                        className="w-full text-left bg-gray-50 hover:bg-green-50 rounded-xl p-3 border border-gray-100 hover:border-green-200 transition-all"
+                      >
+                        <p className="text-xs font-bold text-green-600 mb-1">
+                          {result.verse_key}
+                        </p>
+                        <p
+                          className="text-sm text-gray-700 line-clamp-2"
+                          dangerouslySetInnerHTML={{
+                            __html:
+                              result.text || result.highlighted?.body || "",
+                          }}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {!searching &&
+                  searchResults.length === 0 &&
+                  searchQuery.trim() && (
+                    <p className="text-sm text-gray-400 text-center py-2">
+                      No results found. Try another keyword.
+                    </p>
+                  )}
+              </div>
+            )}
+          </div>
+
           <div className="flex flex-wrap items-center gap-3 mb-6 bg-white rounded-2xl px-5 py-4 shadow-sm justify-between">
             <div className="flex items-center gap-1">
               {fontSizes.map((f) => (
@@ -1274,6 +1400,32 @@ function SurahReader() {
                             ? "Saved spot"
                             : "Save spot"}
                       </button>
+
+                      {connected && (
+                        <button
+                          onClick={(e) => handleBookmark(e, verse)}
+                          disabled={
+                            bookmarkingVerseKey === verse.verse_key ||
+                            bookmarkedVerseKeys.has(verse.verse_key)
+                          }
+                          title={
+                            bookmarkedVerseKeys.has(verse.verse_key)
+                              ? "Bookmarked"
+                              : "Bookmark this verse"
+                          }
+                          className={`text-xs px-3 py-1 rounded-full transition-all ${
+                            bookmarkedVerseKeys.has(verse.verse_key)
+                              ? "bg-amber-500 text-white"
+                              : "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                          } disabled:opacity-60 disabled:cursor-not-allowed`}
+                        >
+                          {bookmarkingVerseKey === verse.verse_key
+                            ? "🔖..."
+                            : bookmarkedVerseKeys.has(verse.verse_key)
+                              ? "🔖 Bookmarked"
+                              : "🔖 Bookmark"}
+                        </button>
+                      )}
 
                       <button
                         onClick={(e) => {
@@ -1420,14 +1572,37 @@ function SurahReader() {
         {selectedVerse && (
           <div className="p-6 pt-6 pb-20 sm:pb-16 flex flex-col min-h-full box-border">
             <div className="bg-gray-50 pb-4 mb-4">
-              <button
-                onClick={() => setIsSidebarOpen(false)}
-                className="mb-4 inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 hover:text-red-500 hover:border-red-200 transition-all"
-                aria-label="Close sidebar"
-                title="Close"
-              >
-                ✕ Close
-              </button>
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <button
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="inline-flex items-center justify-center rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm text-gray-600 hover:text-red-500 hover:border-red-200 transition-all"
+                  aria-label="Close sidebar"
+                  title="Close"
+                >
+                  ✕ Close
+                </button>
+
+                {connected && selectedVerse && (
+                  <button
+                    onClick={(e) => handleBookmark(e, selectedVerse)}
+                    disabled={
+                      bookmarkingVerseKey === selectedVerse?.verse_key ||
+                      bookmarkedVerseKeys.has(selectedVerse?.verse_key)
+                    }
+                    className={`inline-flex items-center gap-1 rounded-xl px-3 py-2 text-sm font-semibold transition-all ${
+                      bookmarkedVerseKeys.has(selectedVerse?.verse_key)
+                        ? "bg-amber-500 text-white"
+                        : "bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200"
+                    } disabled:opacity-60`}
+                  >
+                    {bookmarkingVerseKey === selectedVerse?.verse_key
+                      ? "🔖 Saving..."
+                      : bookmarkedVerseKeys.has(selectedVerse?.verse_key)
+                        ? "🔖 Bookmarked"
+                        : "🔖 Bookmark verse"}
+                  </button>
+                )}
+              </div>
 
               <h2 className="text-lg font-bold text-gray-800">
                 Surah {surah.englishName} : {selectedVerse.verse_number}

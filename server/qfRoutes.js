@@ -320,4 +320,80 @@ router.post("/activity-day", requireUid, async (req, res) => {
   }
 });
 
+// ── Bookmarks ─────────────────────────────────────────────────────────────────
+
+router.get("/bookmarks", requireUid, async (req, res) => {
+  try {
+    const response = await qfRequest(req.uid, {
+      method: "GET",
+      url: `${getUserApiBase()}/bookmarks`,
+    });
+    return res.json(response.data);
+  } catch (error) {
+    console.error(
+      "QF bookmarks fetch error:",
+      error?.response?.data || error.message,
+    );
+    return res.status(error?.response?.status || 500).json({
+      success: false,
+      message: "Could not fetch bookmarks.",
+      details: error?.response?.data || null,
+    });
+  }
+});
+
+router.post("/bookmarks", requireUid, async (req, res) => {
+  try {
+    const { verseKey } = req.body || {};
+
+    if (!verseKey) {
+      return res.status(400).json({
+        success: false,
+        message: "verseKey is required.",
+      });
+    }
+
+    const response = await qfRequest(req.uid, {
+      method: "POST",
+      url: `${getUserApiBase()}/bookmarks`,
+      data: { verseKey },
+    });
+
+    return res.json(response.data);
+  } catch (error) {
+    console.error(
+      "QF bookmark add error:",
+      error?.response?.data || error.message,
+    );
+    return res.status(error?.response?.status || 500).json({
+      success: false,
+      message: "Could not add bookmark.",
+      details: error?.response?.data || null,
+    });
+  }
+});
+
+router.delete("/bookmarks/:verseKey", requireUid, async (req, res) => {
+  try {
+    const { verseKey } = req.params;
+
+    const response = await qfRequest(req.uid, {
+      method: "DELETE",
+      url: `${getUserApiBase()}/bookmarks/${encodeURIComponent(verseKey)}`,
+    });
+
+    return res.json(response.data);
+  } catch (error) {
+    console.error(
+      "QF bookmark delete error:",
+      error?.response?.data || error.message,
+    );
+    return res.status(error?.response?.status || 500).json({
+      success: false,
+      message: "Could not remove bookmark.",
+      details: error?.response?.data || null,
+    });
+  }
+});
+
 module.exports = router;
