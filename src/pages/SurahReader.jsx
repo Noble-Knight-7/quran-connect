@@ -248,7 +248,6 @@ function SurahReader() {
   const [isFinished, setIsFinished] = useState(false);
   const [finishingSurah, setFinishingSurah] = useState(false);
   const { saveReadingSession, connected, addBookmark } = useQuranFoundation();
-  const [savedSpotVerseKey, setSavedSpotVerseKey] = useState(null);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -259,7 +258,6 @@ function SurahReader() {
   // Bookmark state
   const [bookmarkedVerseKeys, setBookmarkedVerseKeys] = useState(new Set());
   const [bookmarkingVerseKey, setBookmarkingVerseKey] = useState(null);
-  const [savingSpotVerseKey, setSavingSpotVerseKey] = useState(null);
 
   // ── Search handler ──────────────────────────────────────────
   const handleSearch = async (e) => {
@@ -296,11 +294,19 @@ function SurahReader() {
     if (!connected || !addBookmark) return;
     const verseKey = verse.verse_key;
     setBookmarkingVerseKey(verseKey);
+
     try {
+      // 1. Perform the bookmark
       await addBookmark(verseKey);
       setBookmarkedVerseKeys((prev) => new Set([...prev, verseKey]));
+
+      // 2. Automatically sync this as the "Saved Spot" (Reading Session)
+      await saveReadingSession({
+        chapterNumber: Number(surahNumber),
+        verseNumber: verse.verse_number,
+      });
     } catch (err) {
-      console.error("Bookmark failed:", err);
+      console.error("Action failed:", err);
     } finally {
       setBookmarkingVerseKey(null);
     }
@@ -1029,28 +1035,6 @@ function SurahReader() {
     setReflectionSaved(false);
   };
 
-  const handleSaveSpot = async (e, verse) => {
-    e.stopPropagation();
-
-    if (!connected) return;
-
-    try {
-      setSavingSpotVerseKey(verse.verse_key);
-
-      await saveReadingSession({
-        chapterNumber: Number(surahNumber),
-        verseNumber: verse.verse_number,
-      });
-
-      setSavedSpotVerseKey(verse.verse_key);
-      console.log("QF reading session saved");
-    } catch (error) {
-      console.error("Failed to save reading session:", error);
-    } finally {
-      setSavingSpotVerseKey(null);
-    }
-  };
-
   const handleSaveReflection = async () => {
     if (!reflectionText.trim() || !user || !selectedVerse) return;
 
@@ -1385,22 +1369,6 @@ function SurahReader() {
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap justify-end">
-                      <button
-                        onClick={(e) => handleSaveSpot(e, verse)}
-                        disabled={savingSpotVerseKey === verse.verse_key}
-                        className={`text-xs px-3 py-1 rounded-full transition-all ${
-                          savedSpotVerseKey === verse.verse_key
-                            ? "bg-blue-600 text-white"
-                            : "bg-blue-50 text-blue-700 hover:bg-blue-100"
-                        } disabled:opacity-60 disabled:cursor-not-allowed`}
-                      >
-                        {savingSpotVerseKey === verse.verse_key
-                          ? "Saving..."
-                          : savedSpotVerseKey === verse.verse_key
-                            ? "Saved spot"
-                            : "Save spot"}
-                      </button>
-
                       {connected && (
                         <button
                           onClick={(e) => handleBookmark(e, verse)}

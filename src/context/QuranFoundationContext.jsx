@@ -110,8 +110,16 @@ export function QuranFoundationProvider({ children }) {
       const data = await response.json();
       if (!response.ok) return null;
 
-      setLatestReadingSession(data?.data || null);
-      return data?.data || null;
+      // QF reading session response has chapterNumber + verseNumber directly
+      const session = data?.data || null;
+      const normalized = session
+        ? {
+            chapterNumber: session.chapterNumber ?? session.chapter_number,
+            verseNumber: session.verseNumber ?? session.verse_number,
+          }
+        : null;
+      setLatestReadingSession(normalized);
+      return normalized;
     } catch (error) {
       console.error("Failed to fetch reading session:", error);
       return null;
@@ -132,7 +140,17 @@ export function QuranFoundationProvider({ children }) {
       if (!response.ok) return [];
 
       const data = await response.json();
-      const list = data?.data || [];
+      // QF API returns: { key: surahNumber, verseNumber, id, type, ... }
+      // We normalize to { verse_key: "surah:verse", id } for easy display
+      const raw = data?.data || [];
+      const list = raw
+        .filter((b) => b.type === "ayah" && b.key && b.verseNumber)
+        .map((b) => ({
+          id: b.id,
+          verse_key: `${b.key}:${b.verseNumber}`,
+          key: b.key,
+          verseNumber: b.verseNumber,
+        }));
       setBookmarks(list);
       return list;
     } catch (error) {
@@ -158,11 +176,22 @@ export function QuranFoundationProvider({ children }) {
         const data = await response.json();
         if (!response.ok) return null;
 
-        // Optimistically update local bookmark list
+        // Normalize response and update local bookmark list
+        // QF response: { data: { id, key, verseNumber, type, ... } }
+        const bookmarkData = data?.data;
+        const normalizedBookmark = bookmarkData
+          ? {
+              id: bookmarkData.id,
+              verse_key: verseKey,
+              key: bookmarkData.key,
+              verseNumber: bookmarkData.verseNumber,
+            }
+          : { id: null, verse_key: verseKey };
+
         setBookmarks((prev) => {
           const alreadyExists = prev.some((b) => b.verse_key === verseKey);
           if (alreadyExists) return prev;
-          return [...prev, { verse_key: verseKey }];
+          return [...prev, normalizedBookmark];
         });
 
         return data;
@@ -179,8 +208,24 @@ export function QuranFoundationProvider({ children }) {
       if (!connected || !user?.uid) return null;
 
       try {
+        // Find the bookmark ID from local state
+        const bookmarks_state = [];
+        setBookmarks((prev) => {
+          bookmarks_state.push(...prev);
+          return prev;
+        });
+        // Get current bookmarks from state to find ID
+        const match = bookmarks_state.find((b) => b.verse_key === verseKey);
+        const bookmarkId = match?.id;
+
+        if (!bookmarkId) {
+          // Still remove from local state even if we can't find ID
+          setBookmarks((prev) => prev.filter((b) => b.verse_key !== verseKey));
+          return null;
+        }
+
         const response = await fetch(
-          `${API_BASE_URL}/api/qf/bookmarks/${encodeURIComponent(verseKey)}`,
+          `${API_BASE_URL}/api/qf/bookmarks/${encodeURIComponent(bookmarkId)}`,
           {
             method: "DELETE",
             headers: {
@@ -202,6 +247,26 @@ export function QuranFoundationProvider({ children }) {
     },
     [connected, user],
   );
+
+  // ── Disconnect ───────────────────────────────────────────────
+  const disconnect = useCallback(async () => {
+    if (!user?.uid) return;
+    try {
+      await fetch(`${API_BASE_URL}/api/qf/auth/disconnect`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": user.uid,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to disconnect:", error);
+    } finally {
+      setConnected(false);
+      setBookmarks([]);
+      setLatestReadingSession(null);
+    }
+  }, [user]);
 
   // ── Effects ───────────────────────────────────────────────────
   useEffect(() => {
@@ -370,6 +435,7 @@ export function QuranFoundationProvider({ children }) {
       fetchBookmarks,
       addBookmark,
       removeBookmark,
+      disconnect,
     }),
     [
       connected,
@@ -383,6 +449,7 @@ export function QuranFoundationProvider({ children }) {
       fetchBookmarks,
       addBookmark,
       removeBookmark,
+      disconnect,
     ],
   );
 

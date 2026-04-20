@@ -26,28 +26,31 @@ function QuranFoundationConnectCard() {
   }
 
   return (
-    <div className="w-full md:w-auto bg-white rounded-2xl shadow-sm px-4 py-3 border border-gray-100">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-        <p className="text-sm font-semibold text-gray-800 leading-snug sm:whitespace-nowrap">
-          {connected
-            ? "Connected with Quran Foundation"
-            : "Connect with Quran Foundation"}
-        </p>
+    <div className="w-full bg-white rounded-2xl shadow-sm p-4 border border-gray-100 mb-6">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
+          <div
+            className={`w-2 h-2 rounded-full ${connected ? "bg-green-500" : "bg-gray-300 animate-pulse"}`}
+          ></div>
+          <p className="text-sm font-medium text-gray-700">
+            {connected ? "Quran Foundation Synced" : "Cloud Sync Offline"}
+          </p>
+        </div>
 
         {connected ? (
           <button
             onClick={handleDisconnect}
             disabled={disconnecting}
-            className="w-full sm:w-auto px-3 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="text-xs font-bold text-red-500 hover:text-red-700 transition-colors"
           >
-            {disconnecting ? "Disconnecting..." : "Disconnect"}
+            {disconnecting ? "..." : "Disconnect"}
           </button>
         ) : (
           <button
             onClick={startConnectFlow}
-            className="w-full sm:w-auto px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700 text-xs font-bold transition-colors shadow-sm"
+            className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-2 px-4 rounded-lg transition-all shadow-sm"
           >
-            Connect
+            Connect Now
           </button>
         )}
       </div>

@@ -327,6 +327,11 @@ router.get("/bookmarks", requireUid, async (req, res) => {
     const response = await qfRequest(req.uid, {
       method: "GET",
       url: `${getUserApiBase()}/bookmarks`,
+      params: {
+        mushafId: 4, // 4 = UthmaniHafs (matches your app)
+        type: "ayah",
+        first: 20,
+      },
     });
     return res.json(response.data);
   } catch (error) {
@@ -353,10 +358,28 @@ router.post("/bookmarks", requireUid, async (req, res) => {
       });
     }
 
+    // QF API expects: { key: surahNumber, verseNumber, type: "ayah", mushaf: 4 }
+    // verseKey format is "surahNumber:verseNumber" e.g. "2:255"
+    const [surahStr, verseStr] = String(verseKey).split(":");
+    const key = Number(surahStr);
+    const verseNumber = Number(verseStr);
+
+    if (!key || !verseNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid verseKey format. Expected surah:verse e.g. 2:255",
+      });
+    }
+
     const response = await qfRequest(req.uid, {
       method: "POST",
       url: `${getUserApiBase()}/bookmarks`,
-      data: { verseKey },
+      data: {
+        type: "ayah",
+        key,
+        verseNumber,
+        mushaf: 4, // 4 = UthmaniHafs
+      },
     });
 
     return res.json(response.data);
@@ -373,13 +396,13 @@ router.post("/bookmarks", requireUid, async (req, res) => {
   }
 });
 
-router.delete("/bookmarks/:verseKey", requireUid, async (req, res) => {
+router.delete("/bookmarks/:bookmarkId", requireUid, async (req, res) => {
   try {
-    const { verseKey } = req.params;
+    const { bookmarkId } = req.params;
 
     const response = await qfRequest(req.uid, {
       method: "DELETE",
-      url: `${getUserApiBase()}/bookmarks/${encodeURIComponent(verseKey)}`,
+      url: `${getUserApiBase()}/bookmarks/${encodeURIComponent(bookmarkId)}`,
     });
 
     return res.json(response.data);

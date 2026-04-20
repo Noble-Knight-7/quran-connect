@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../AuthContext";
+import { useQuranFoundation } from "../context/QuranFoundationContext";
 import { db } from "../firebase";
 import {
   doc,
@@ -133,6 +135,8 @@ function formatReflectionDate(timestamp) {
 }
 function Dashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const { connected, bookmarks, latestReadingSession } = useQuranFoundation();
   const [stats, setStats] = useState(null);
   const [topSurahs, setTopSurahs] = useState([]);
   const [khatamCount, setKhatamCount] = useState(0);
@@ -463,6 +467,70 @@ function Dashboard() {
               ))}
             </div>
           </div>
+
+          {/* QF Bookmarks Card */}
+          {connected && bookmarks.length > 0 && (
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-black text-gray-800 tracking-tight">
+                  🔖 Bookmarks
+                </h2>
+                <span className="text-[10px] font-black text-amber-600 bg-amber-50 px-2 py-1 rounded-md uppercase">
+                  {bookmarks.length} saved
+                </span>
+              </div>
+              <div className="space-y-2">
+                {bookmarks.slice(0, 6).map((bookmark, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center justify-between p-3 bg-amber-50 rounded-xl border border-amber-100 hover:border-amber-300 transition-all"
+                  >
+                    <span className="text-sm font-bold text-amber-800">
+                      {bookmark.verse_key}
+                    </span>
+                    <button
+                      onClick={() => {
+                        const [chapter] = bookmark.verse_key.split(":");
+                        navigate(`/quran/${chapter}`, {
+                          state: { openVerseKey: bookmark.verse_key },
+                        });
+                      }}
+                      className="text-xs text-green-700 font-bold hover:underline"
+                    >
+                      Read →
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* QF Continue Reading Card */}
+          {connected && latestReadingSession && (
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-gray-100">
+              <p className="text-green-600 text-[10px] font-black uppercase tracking-widest mb-1">
+                Continue Reading
+              </p>
+              <p className="text-gray-800 font-black text-lg mb-1">
+                Surah {latestReadingSession.chapterNumber}
+              </p>
+              <p className="text-gray-400 text-xs mb-4">
+                Last read: Ayah {latestReadingSession.verseNumber}
+              </p>
+              <button
+                onClick={() =>
+                  navigate(`/quran/${latestReadingSession.chapterNumber}`, {
+                    state: {
+                      resumeVerseKey: `${latestReadingSession.chapterNumber}:${latestReadingSession.verseNumber}`,
+                    },
+                  })
+                }
+                className="w-full bg-green-600 text-white font-bold py-3 rounded-2xl hover:bg-green-700 transition-all text-sm"
+              >
+                Resume →
+              </button>
+            </div>
+          )}
 
           {/* Mobile-only Peak Momentum (Hidden on desktop to avoid repetition) */}
           <div className="lg:hidden bg-blue-50/50 border border-blue-100 rounded-3xl p-6 text-center">

@@ -233,6 +233,7 @@ function Home() {
     return () => {
       cancelled = true;
     };
+    // Added latestReadingSession here to trigger re-fetch on home page when spot changes
   }, [connected, latestReadingSession]);
 
   return (
