@@ -10,7 +10,7 @@
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind%20CSS-3-06B6D4?style=for-the-badge&logo=tailwindcss)](https://tailwindcss.com/)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
 
-**Submitted to the [Quran Foundation Hackathon 2026](https://launch.provisioncapital.com/quran-hackathon) · $10,000 Prize Pool**
+**Submitted to the [Quran Foundation Hackathon 2026](https://launch.provisioncapital.com/quran-hackathon)**
 
 </div>
 
